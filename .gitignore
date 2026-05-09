@@ -2,7 +2,10 @@ node_modules/
 dist/
 .env
 .env.local
+.codex-logs/
 client/.env
 client/dist/
 server/.env
+mobile/.expo/
+mobile/dist/
 npm-debug.log*

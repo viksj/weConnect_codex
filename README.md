@@ -6,6 +6,7 @@ Prototype web app based on the provided workflow image.
 
 - Backend: Node.js, Express, Socket.IO
 - Frontend: React, Vite, Socket.IO Client
+- Mobile: Expo React Native for Android and iOS
 - Auth: Firebase Phone Authentication
 - Translation: mock AI translation service with Hindi/English sample phrases
 - Storage: database adapter layer with Memory, MySQL, and MongoDB providers
@@ -102,6 +103,22 @@ npm run dev
 
 Open the React app at `http://localhost:5173`.
 
+## Run Mobile App
+
+```bash
+npm run install:mobile
+npm run dev:server
+npm run dev:mobile
+```
+
+Then open the Expo app on Android or iOS.
+
+- Android emulator default API URL: `http://10.0.2.2:4000`
+- iOS simulator default API URL: `http://localhost:4000`
+- Physical phone: open mobile settings in the app and set the API server to your computer LAN IP, for example `http://192.168.1.10:4000`
+
+The mobile prototype uses OTP `123456`.
+
 ## Prototype Features
 
 - Register/login style onboarding
@@ -111,4 +128,5 @@ Open the React app at `http://localhost:5173`.
 - Real-time translated chat
 - Original + translated message display
 - Voice/video call workflow UI placeholders
+- Android/iOS mobile app with onboarding, OTP, contacts, translated chat, call controls, session restore, and editable API server settings
 - Backend health, users, contacts, messages, Socket.IO events
