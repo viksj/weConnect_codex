@@ -6,6 +6,9 @@ dist/
 client/.env
 client/dist/
 server/.env
+server/firebase-service-account*.json
 mobile/.expo/
 mobile/dist/
+mobile/google-services.json
+mobile/GoogleService-Info.plist
 npm-debug.log*

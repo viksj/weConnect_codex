@@ -5,6 +5,13 @@ const localUrl = Platform.OS === "android" ? androidEmulatorUrl : "http://localh
 
 export const defaultApiUrl = process.env.EXPO_PUBLIC_API_URL || localUrl;
 
+function authHeaders(token) {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`
+  };
+}
+
 async function parseResponse(response, fallbackMessage) {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -18,21 +25,25 @@ export async function healthCheck(apiUrl) {
   return parseResponse(response, "Server is not reachable");
 }
 
-export async function registerUser(apiUrl, payload) {
+export async function registerUser(apiUrl, payload, token) {
   const response = await fetch(`${apiUrl}/api/register`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(token),
     body: JSON.stringify(payload)
   });
   return parseResponse(response, "Registration failed");
 }
 
-export async function getContacts(apiUrl, userId) {
-  const response = await fetch(`${apiUrl}/api/users/${userId}/contacts`);
+export async function getContacts(apiUrl, userId, token) {
+  const response = await fetch(`${apiUrl}/api/users/${userId}/contacts`, {
+    headers: authHeaders(token)
+  });
   return parseResponse(response, "Unable to load contacts");
 }
 
-export async function getConversation(apiUrl, userId, contactId) {
-  const response = await fetch(`${apiUrl}/api/users/${userId}/conversations/${contactId}`);
+export async function getConversation(apiUrl, userId, contactId, token) {
+  const response = await fetch(`${apiUrl}/api/users/${userId}/conversations/${contactId}`, {
+    headers: authHeaders(token)
+  });
   return parseResponse(response, "Unable to load conversation");
 }

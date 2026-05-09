@@ -34,8 +34,40 @@ export function detectLanguage(text, fallback = "en") {
   return fallback;
 }
 
-export function translateText(text, fromLanguage, toLanguage) {
+async function translateWithLibreTranslate(text, fromLanguage, toLanguage) {
+  const url = process.env.LIBRE_TRANSLATE_URL;
+  if (!url) return null;
+
+  const response = await fetch(`${url.replace(/\/$/, "")}/translate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      q: text,
+      source: fromLanguage,
+      target: toLanguage,
+      format: "text",
+      api_key: process.env.LIBRE_TRANSLATE_API_KEY || undefined
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Translation provider failed with ${response.status}`);
+  }
+
+  const body = await response.json();
+  return body.translatedText || null;
+}
+
+export async function translateText(text, fromLanguage, toLanguage) {
   if (!text || fromLanguage === toLanguage) return text;
+
+  if (process.env.TRANSLATION_PROVIDER === "libretranslate") {
+    const providerTranslation = await translateWithLibreTranslate(text, fromLanguage, toLanguage).catch((error) => {
+      console.error("Translation provider failed, using local fallback", error);
+      return null;
+    });
+    if (providerTranslation) return providerTranslation;
+  }
 
   const normalized = text.trim().toLowerCase();
   const translated = dictionary[fromLanguage]?.[toLanguage]?.[normalized];

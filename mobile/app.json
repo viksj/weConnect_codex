@@ -14,11 +14,18 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.translationchat.mobile"
+      "bundleIdentifier": "com.translationchat.mobile",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "package": "com.translationchat.mobile"
+      "package": "com.translationchat.mobile",
+      "googleServicesFile": "./google-services.json"
     },
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "expo-dev-client"
+    ],
     "extra": {
       "defaultApiUrl": "http://localhost:4000"
     }

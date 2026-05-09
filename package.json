@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "install:all": "npm --prefix server install && npm --prefix client install && npm --prefix mobile install",
+    "install:web": "npm --prefix server install && npm --prefix client install",
     "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
+    "build:web": "npm --prefix client run build",
+    "start:server": "npm --prefix server start",
     "dev:mobile": "npm --prefix mobile run start",
     "install:mobile": "npm --prefix mobile install"
   },

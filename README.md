@@ -1,23 +1,120 @@
-# Real-Time Translation Chat & Calling Web App
+# WeConnect Translation Chat
 
-Prototype web app based on the provided workflow image.
+Web-first real-time translation chat app with Firebase Phone Auth, MySQL storage, and Socket.IO messaging.
 
 ## Stack
 
 - Backend: Node.js, Express, Socket.IO
 - Frontend: React, Vite, Socket.IO Client
-- Mobile: Expo React Native for Android and iOS
+- Mobile: Expo React Native for Android and iOS, optional later phase
 - Auth: Firebase Phone Authentication
 - Translation: mock AI translation service with Hindi/English sample phrases
 - Storage: database adapter layer with Memory, MySQL, and MongoDB providers
+
+## Web Local Test
+
+Use this path when testing the web app locally before buying a domain or hosting.
+
+1. Install web dependencies:
+
+```bash
+npm run install:web
+```
+
+2. Make sure these local env files exist:
+
+```text
+server/.env
+client/.env
+server/firebase-service-account.json
+```
+
+3. In Firebase Console, confirm:
+
+- Authentication > Sign-in method > Phone is enabled
+- Authentication > Settings > Authorized domains contains `localhost`
+
+4. Start server and client:
+
+```bash
+npm run dev
+```
+
+5. Open the web app:
+
+```text
+http://localhost:5173
+```
+
+The backend runs at `http://localhost:4000`.
+
+## Web Production Checklist
+
+When you buy hosting and a domain, update these values.
+
+`client/.env`:
+
+```env
+VITE_API_URL=https://api.yourdomain.com
+VITE_ICE_SERVERS={"iceServers":[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:turn.yourdomain.com:3478","username":"turn_user","credential":"turn_password"}]}
+```
+
+`server/.env`:
+
+```env
+NODE_ENV=production
+CLIENT_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+DB_PROVIDER=mysql
+DB_SEED_DEMO_USERS=false
+ENABLE_DEMO_OTP=false
+ENABLE_DEBUG_MESSAGES=false
+FIREBASE_SERVICE_ACCOUNT_PATH=/secure/path/firebase-service-account.json
+```
+
+For reliable voice/video calls outside the same local network, add a TURN server such as Coturn and put it in `VITE_ICE_SERVERS`.
+
+For production-grade translation, configure a LibreTranslate-compatible provider on the server:
+
+```env
+TRANSLATION_PROVIDER=libretranslate
+LIBRE_TRANSLATE_URL=https://libretranslate.example.com
+LIBRE_TRANSLATE_API_KEY=optional_api_key
+```
+
+Firebase Console:
+
+- Add `yourdomain.com` and `www.yourdomain.com` to Authentication > Settings > Authorized domains
+- Keep Phone Authentication enabled
+
+Before deploy:
+
+```bash
+npm --prefix client run build
+npm --prefix server start
+```
 
 ## Firebase Phone Auth Setup
 
 1. Firebase Console me project create/open karo.
 2. Authentication > Sign-in method me `Phone` provider enable karo.
-3. Project settings > Web app config copy karo.
-4. `client/.env.example` ko `client/.env` me copy karke values fill karo.
-5. Dev server restart karo.
+3. Authentication > Settings > Authorized domains me `localhost` add/confirm karo.
+4. Project settings > Web app config copy karo.
+5. `client/.env.example` ko `client/.env` me copy karke values fill karo.
+6. Service accounts tab se private key download karke ignored path `server/firebase-service-account.json` par rakho.
+7. `server/.env` me `FIREBASE_PROJECT_ID` aur `FIREBASE_SERVICE_ACCOUNT_PATH` set karo.
+
+## User Journey
+
+1. User name, phone number, mother tongue, and understood language enters.
+2. Firebase sends SMS OTP to the phone number.
+3. Browser verifies OTP with Firebase and receives a Firebase ID token.
+4. Client sends the ID token to the backend.
+5. Backend verifies the token with Firebase Admin and creates/updates the user in MySQL.
+6. Authenticated user can update profile details except registered phone number.
+7. User can add contacts by registered phone number.
+8. If a phone number is not registered, the app returns an invite link/message that can be copied or shared.
+9. User can chat, call, and receive browser notifications after allowing notification permission.
+10. User can delete a chat for themselves. The backend stores a soft-delete marker and hides older messages for that user.
 
 ## Backend Database Setup
 
@@ -35,7 +132,7 @@ Available providers:
 2. Database create karo:
 
 ```sql
-CREATE DATABASE IF NOT EXISTS translation_chat
+CREATE DATABASE IF NOT EXISTS weconnect
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 ```
@@ -46,12 +143,12 @@ CREATE DATABASE IF NOT EXISTS translation_chat
 ```env
 DB_PROVIDER=mysql
 DB_INIT_SCHEMA=true
-DB_SEED_DEMO_USERS=true
+DB_SEED_DEMO_USERS=false
 MYSQL_HOST=localhost
 MYSQL_PORT=3306
-MYSQL_USER=root
+MYSQL_USER=your_mysql_user
 MYSQL_PASSWORD=your_mysql_password
-MYSQL_DATABASE=translation_chat
+MYSQL_DATABASE=weconnect
 ```
 
 5. Server run karo:
@@ -94,10 +191,10 @@ DB_PROVIDER=memory
 
 Is mode mein data persist nahi hota.
 
-## Run
+## Run Web
 
 ```bash
-npm run install:all
+npm run install:web
 npm run dev
 ```
 
@@ -117,7 +214,23 @@ Then open the Expo app on Android or iOS.
 - iOS simulator default API URL: `http://localhost:4000`
 - Physical phone: open mobile settings in the app and set the API server to your computer LAN IP, for example `http://192.168.1.10:4000`
 
-The mobile prototype uses OTP `123456`.
+### Mobile Firebase Phone Auth
+
+The mobile app uses native Firebase Phone Auth through React Native Firebase, so it needs a custom Expo dev build. Expo Go is not enough for this flow.
+
+1. In Firebase Console, add an Android app with package name `com.translationchat.mobile`.
+2. Download `google-services.json` and place it at `mobile/google-services.json`.
+3. If you need iOS, add an iOS app with bundle id `com.translationchat.mobile`.
+4. Download `GoogleService-Info.plist` and place it at `mobile/GoogleService-Info.plist`.
+5. Build/run a custom dev client:
+
+```bash
+cd mobile
+npx expo prebuild
+npx expo run:android
+```
+
+For a physical phone, keep the backend running and set the mobile API server to your computer LAN IP, for example `http://192.168.1.10:4000`.
 
 ## Prototype Features
 
@@ -127,6 +240,7 @@ The mobile prototype uses OTP `123456`.
 - Contact list with online status
 - Real-time translated chat
 - Original + translated message display
-- Voice/video call workflow UI placeholders
+- WebRTC voice/video calling on web
+- Live translated call captions using browser speech recognition and the server translation pipeline
 - Android/iOS mobile app with onboarding, OTP, contacts, translated chat, call controls, session restore, and editable API server settings
 - Backend health, users, contacts, messages, Socket.IO events

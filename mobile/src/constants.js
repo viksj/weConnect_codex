@@ -14,5 +14,3 @@ export const demoUser = {
   motherTongue: "hi",
   understands: "en"
 };
-
-export const demoOtp = "123456";

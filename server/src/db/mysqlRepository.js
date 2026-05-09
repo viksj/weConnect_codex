@@ -75,6 +75,28 @@ export function createMySqlRepository() {
         CONSTRAINT fk_messages_receiver FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS contacts (
+        user_id VARCHAR(64) NOT NULL,
+        contact_id VARCHAR(64) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, contact_id),
+        CONSTRAINT fk_contacts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_contacts_contact FOREIGN KEY (contact_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS conversation_deletions (
+        user_id VARCHAR(64) NOT NULL,
+        contact_id VARCHAR(64) NOT NULL,
+        deleted_at DATETIME(3) NOT NULL,
+        PRIMARY KEY (user_id, contact_id),
+        CONSTRAINT fk_conversation_deletions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        CONSTRAINT fk_conversation_deletions_contact FOREIGN KEY (contact_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
   }
 
   async function seedDemoUsers() {
@@ -154,14 +176,59 @@ export function createMySqlRepository() {
       return mapUser(rows[0]);
     },
 
+    async updateUser(userId, payload) {
+      const user = {
+        userId,
+        name: payload.name,
+        motherTongue: payload.motherTongue || "hi",
+        understands: payload.understands || "en",
+        avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
+      };
+
+      await pool.query(
+        `UPDATE users
+         SET name = :name,
+             mother_tongue = :motherTongue,
+             understands = :understands,
+             avatar = :avatar
+         WHERE id = :userId`,
+        user
+      );
+
+      return this.getUserById(userId);
+    },
+
+    async findUserByPhone(emailOrPhone) {
+      const [rows] = await pool.query("SELECT * FROM users WHERE email_or_phone = :emailOrPhone LIMIT 1", {
+        emailOrPhone
+      });
+      return mapUser(rows[0]);
+    },
+
     async listUsers() {
       const [rows] = await pool.query("SELECT * FROM users ORDER BY created_at ASC");
       return rows.map(mapUser);
     },
 
     async getContacts(userId) {
-      const [rows] = await pool.query("SELECT * FROM users WHERE id <> :userId ORDER BY name ASC", { userId });
+      const [rows] = await pool.query(
+        `SELECT users.*
+         FROM contacts
+         INNER JOIN users ON users.id = contacts.contact_id
+         WHERE contacts.user_id = :userId
+         ORDER BY users.name ASC`,
+        { userId }
+      );
       return rows.map(mapUser);
+    },
+
+    async addContact(userId, contactId) {
+      await pool.query(
+        `INSERT IGNORE INTO contacts (user_id, contact_id)
+         VALUES (:userId, :contactId)`,
+        { userId, contactId }
+      );
+      return this.getUserById(contactId);
     },
 
     async saveMessage(message) {
@@ -178,14 +245,34 @@ export function createMySqlRepository() {
 
     async getConversation(userId, contactId) {
       const [rows] = await pool.query(
-        `SELECT * FROM messages
-         WHERE (sender_id = :userId AND receiver_id = :contactId)
-            OR (sender_id = :contactId AND receiver_id = :userId)
-         ORDER BY created_at ASC`,
+        `SELECT messages.*
+         FROM messages
+         LEFT JOIN conversation_deletions
+           ON conversation_deletions.user_id = :userId
+          AND conversation_deletions.contact_id = :contactId
+         WHERE (
+             (sender_id = :userId AND receiver_id = :contactId)
+             OR (sender_id = :contactId AND receiver_id = :userId)
+           )
+           AND (
+             conversation_deletions.deleted_at IS NULL
+             OR messages.created_at > conversation_deletions.deleted_at
+           )
+         ORDER BY messages.created_at ASC`,
         { userId, contactId }
       );
 
       return rows.map(mapMessage);
+    },
+
+    async softDeleteConversation(userId, contactId) {
+      await pool.query(
+        `INSERT INTO conversation_deletions (user_id, contact_id, deleted_at)
+         VALUES (:userId, :contactId, :deletedAt)
+         ON DUPLICATE KEY UPDATE deleted_at = VALUES(deleted_at)`,
+        { userId, contactId, deletedAt: new Date().toISOString() }
+      );
+      return { deleted: true };
     },
 
     async listMessages() {

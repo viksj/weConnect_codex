@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import auth from "@react-native-firebase/auth";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -19,7 +20,7 @@ import {
 } from "react-native";
 import { io } from "socket.io-client";
 import { defaultApiUrl, getContacts, getConversation, healthCheck, registerUser } from "./src/api";
-import { demoOtp, demoUser, languageName, languages } from "./src/constants";
+import { demoUser, languageName, languages } from "./src/constants";
 
 const storageKeys = {
   apiUrl: "translation-chat:api-url",
@@ -33,7 +34,9 @@ export default function App() {
   const [screen, setScreen] = useState("register");
   const [form, setForm] = useState(demoUser);
   const [otp, setOtp] = useState("");
+  const [confirmationResult, setConfirmationResult] = useState(null);
   const [user, setUser] = useState(null);
+  const [authToken, setAuthToken] = useState("");
   const [contacts, setContacts] = useState([]);
   const [selectedContact, setSelectedContact] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -55,9 +58,15 @@ export default function App() {
   }, [apiUrl]);
 
   useEffect(() => {
-    if (!user) return undefined;
+    if (!user || !authToken) return undefined;
 
-    const socket = io(apiUrl, { transports: ["websocket", "polling"] });
+    const socket = io(apiUrl, {
+      auth: {
+        token: authToken,
+        userId: user.id
+      },
+      transports: ["websocket", "polling"]
+    });
     socketRef.current = socket;
     socket.emit("user:online", { userId: user.id });
 
@@ -84,17 +93,17 @@ export default function App() {
     });
 
     return () => socket.disconnect();
-  }, [apiUrl, user]);
+  }, [apiUrl, authToken, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !authToken) return;
     loadContacts();
-  }, [apiUrl, user]);
+  }, [apiUrl, authToken, user]);
 
   useEffect(() => {
-    if (!user || !activeContact) return;
+    if (!user || !activeContact || !authToken) return;
     loadConversation(activeContact.id);
-  }, [apiUrl, user, activeContact?.id]);
+  }, [apiUrl, authToken, user, activeContact?.id]);
 
   const filteredContacts = useMemo(() => {
     const query = searchText.trim().toLowerCase();
@@ -121,8 +130,14 @@ export default function App() {
       setDraftApiUrl(storedUrl);
     }
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
-      setScreen("chat");
+      const firebaseUser = auth().currentUser;
+      if (firebaseUser) {
+        setAuthToken(await firebaseUser.getIdToken());
+        setUser(JSON.parse(storedUser));
+        setScreen("chat");
+      } else {
+        await AsyncStorage.removeItem(storageKeys.user);
+      }
     }
   }
 
@@ -138,7 +153,7 @@ export default function App() {
 
   async function loadContacts() {
     try {
-      const result = await getContacts(apiUrl, user.id);
+      const result = await getContacts(apiUrl, user.id, authToken);
       setContacts(result.contacts);
       setSelectedContact((current) => current || result.contacts[0] || null);
     } catch (error) {
@@ -148,31 +163,51 @@ export default function App() {
 
   async function loadConversation(contactId) {
     try {
-      const result = await getConversation(apiUrl, user.id, contactId);
+      const result = await getConversation(apiUrl, user.id, contactId, authToken);
       setMessages(result.messages);
     } catch (error) {
       Alert.alert("Conversation", error.message);
     }
   }
 
-  function handleSendOtp() {
+  async function handleSendOtp() {
     if (!form.name.trim() || !form.emailOrPhone.trim()) {
       Alert.alert("Missing details", "Enter your name and phone number.");
-      return;
-    }
-    setOtp("");
-    setScreen("verify");
-  }
-
-  async function handleVerify() {
-    if (otp.trim() !== demoOtp) {
-      Alert.alert("Invalid OTP", `Use ${demoOtp} for this prototype.`);
       return;
     }
 
     setIsLoading(true);
     try {
-      const result = await registerUser(apiUrl, { ...form, firebaseUid: `mobile-${Date.now()}` });
+      const confirmation = await auth().signInWithPhoneNumber(form.emailOrPhone.trim());
+      setConfirmationResult(confirmation);
+      setOtp("");
+      setScreen("verify");
+    } catch (error) {
+      Alert.alert("OTP failed", error.message || "Unable to send OTP. Check Firebase phone auth setup.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleVerify() {
+    if (!confirmationResult) {
+      Alert.alert("OTP", "Send OTP again before verifying.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const credential = await confirmationResult.confirm(otp.trim());
+      const token = await credential.user.getIdToken();
+      const result = await registerUser(
+        apiUrl,
+        {
+          ...form,
+          emailOrPhone: credential.user.phoneNumber || form.emailOrPhone
+        },
+        token
+      );
+      setAuthToken(token);
       setUser(result.user);
       await AsyncStorage.setItem(storageKeys.user, JSON.stringify(result.user));
       setScreen("chat");
@@ -188,7 +223,6 @@ export default function App() {
     if (!text || !user || !activeContact) return;
 
     socketRef.current?.emit("message:send", {
-      senderId: user.id,
       receiverId: activeContact.id,
       text
     });
@@ -199,8 +233,6 @@ export default function App() {
     if (!activeContact || !user) return;
     socketRef.current?.emit("call:signal", {
       type: mode,
-      senderId: user.id,
-      senderName: user.name,
       receiverId: activeContact.id
     });
     setCall({
@@ -222,8 +254,11 @@ export default function App() {
 
   async function logout() {
     socketRef.current?.disconnect();
+    await auth().signOut().catch(() => undefined);
     await AsyncStorage.removeItem(storageKeys.user);
     setUser(null);
+    setAuthToken("");
+    setConfirmationResult(null);
     setMessages([]);
     setContacts([]);
     setSelectedContact(null);
@@ -319,7 +354,7 @@ function AuthScreen({ connection, form, isLoading, otp, screen, setForm, setOtp,
               <Text style={styles.backText}>Back</Text>
             </Pressable>
             <Text style={styles.panelTitle}>Verify phone</Text>
-            <Text style={styles.mutedText}>Prototype OTP is {demoOtp}.</Text>
+            <Text style={styles.mutedText}>Enter the SMS OTP sent by Firebase.</Text>
             <Field
               keyboardType="number-pad"
               label="OTP"

@@ -4,6 +4,8 @@ import { seedUsers } from "./seedUsers.js";
 export function createMemoryRepository() {
   const users = new Map();
   const messages = [];
+  const contacts = new Map();
+  const deletedConversations = new Map();
 
   seedUsers.forEach((user) => users.set(user.id, { ...user }));
 
@@ -37,12 +39,38 @@ export function createMemoryRepository() {
       return users.get(userId) || null;
     },
 
+    async updateUser(userId, payload) {
+      const existingUser = users.get(userId);
+      if (!existingUser) return null;
+
+      const user = {
+        ...existingUser,
+        name: payload.name,
+        motherTongue: payload.motherTongue || existingUser.motherTongue,
+        understands: payload.understands || existingUser.understands,
+        avatar: payload.name?.charAt(0)?.toUpperCase() || existingUser.avatar
+      };
+      users.set(userId, user);
+      return user;
+    },
+
+    async findUserByPhone(emailOrPhone) {
+      return Array.from(users.values()).find((user) => user.emailOrPhone === emailOrPhone) || null;
+    },
+
     async listUsers() {
       return Array.from(users.values());
     },
 
     async getContacts(userId) {
-      return Array.from(users.values()).filter((user) => user.id !== userId);
+      return Array.from(contacts.get(userId) || []).map((contactId) => users.get(contactId)).filter(Boolean);
+    },
+
+    async addContact(userId, contactId) {
+      const userContacts = contacts.get(userId) || new Set();
+      userContacts.add(contactId);
+      contacts.set(userId, userContacts);
+      return users.get(contactId) || null;
     },
 
     async saveMessage(message) {
@@ -51,11 +79,18 @@ export function createMemoryRepository() {
     },
 
     async getConversation(userId, contactId) {
+      const deletedAt = deletedConversations.get(`${userId}:${contactId}`);
       return messages.filter((message) => {
         const sent = message.senderId === userId && message.receiverId === contactId;
         const received = message.senderId === contactId && message.receiverId === userId;
-        return sent || received;
+        const visible = !deletedAt || new Date(message.createdAt) > new Date(deletedAt);
+        return (sent || received) && visible;
       });
+    },
+
+    async softDeleteConversation(userId, contactId) {
+      deletedConversations.set(`${userId}:${contactId}`, new Date().toISOString());
+      return { deleted: true };
     },
 
     async listMessages() {
