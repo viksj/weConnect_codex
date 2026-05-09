@@ -88,6 +88,21 @@ export function createMemoryRepository() {
       });
     },
 
+    async markConversationRead(userId, contactId) {
+      const readAt = new Date().toISOString();
+      const updatedIds = [];
+
+      messages.forEach((message) => {
+        if (message.senderId === contactId && message.receiverId === userId && message.status !== "read") {
+          message.status = "read";
+          message.readAt = readAt;
+          updatedIds.push(message.id);
+        }
+      });
+
+      return { updatedIds, status: "read", readAt };
+    },
+
     async softDeleteConversation(userId, contactId) {
       deletedConversations.set(`${userId}:${contactId}`, new Date().toISOString());
       return { deleted: true };

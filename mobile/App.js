@@ -21,6 +21,7 @@ import {
 import { io } from "socket.io-client";
 import { defaultApiUrl, getContacts, getConversation, healthCheck, registerUser } from "./src/api";
 import { demoUser, languageName, languages } from "./src/constants";
+import { encryptMessage, decryptMessage } from "./src/encryptionService";
 
 const storageKeys = {
   apiUrl: "translation-chat:api-url",
@@ -76,9 +77,16 @@ export default function App() {
       setContacts(allUsers.filter((item) => item.id !== user.id));
     });
     socket.on("message:new", (message) => {
+      // Decrypt the message texts
+      const decryptedMessage = {
+        ...message,
+        originalText: decryptMessage(message.originalText),
+        translatedText: decryptMessage(message.translatedText)
+      };
+
       setMessages((current) => {
-        if (current.some((item) => item.id === message.id)) return current;
-        return [...current, message];
+        if (current.some((item) => item.id === decryptedMessage.id)) return current;
+        return [...current, decryptedMessage];
       });
     });
     socket.on("call:incoming", (payload) => {
@@ -164,7 +172,13 @@ export default function App() {
   async function loadConversation(contactId) {
     try {
       const result = await getConversation(apiUrl, user.id, contactId, authToken);
-      setMessages(result.messages);
+      // Decrypt stored messages
+      const decryptedMessages = result.messages.map(message => ({
+        ...message,
+        originalText: decryptMessage(message.originalText),
+        translatedText: decryptMessage(message.translatedText)
+      }));
+      setMessages(decryptedMessages);
     } catch (error) {
       Alert.alert("Conversation", error.message);
     }
@@ -224,7 +238,7 @@ export default function App() {
 
     socketRef.current?.emit("message:send", {
       receiverId: activeContact.id,
-      text
+      text: encryptMessage(text)
     });
     setMessageText("");
   }

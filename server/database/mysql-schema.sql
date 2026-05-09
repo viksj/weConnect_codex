@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS messages (
   source_language VARCHAR(16) NOT NULL,
   target_language VARCHAR(16) NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'delivered',
+  read_at DATETIME(3) NULL,
   created_at DATETIME(3) NOT NULL,
   INDEX idx_messages_conversation (sender_id, receiver_id, created_at),
   CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,

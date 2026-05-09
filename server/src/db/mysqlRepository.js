@@ -28,6 +28,7 @@ function mapMessage(row) {
     sourceLanguage: row.source_language,
     targetLanguage: row.target_language,
     status: row.status,
+    readAt: row.read_at instanceof Date ? row.read_at.toISOString() : row.read_at,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at
   };
 }
@@ -75,6 +76,10 @@ export function createMySqlRepository() {
         CONSTRAINT fk_messages_receiver FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    await pool.query("ALTER TABLE messages ADD COLUMN read_at DATETIME(3) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS contacts (
@@ -232,15 +237,18 @@ export function createMySqlRepository() {
     },
 
     async saveMessage(message) {
+      const createdAt = message.createdAt ? new Date(message.createdAt) : new Date();
+      const formattedCreatedAt = `${createdAt.toISOString().slice(0, 19).replace("T", " ")}`;
+
       await pool.query(
         `INSERT INTO messages
           (id, sender_id, receiver_id, original_text, translated_text, source_language, target_language, status, created_at)
          VALUES
           (:id, :senderId, :receiverId, :originalText, :translatedText, :sourceLanguage, :targetLanguage, :status, :createdAt)`,
-        message
+        { ...message, createdAt: formattedCreatedAt }
       );
 
-      return message;
+      return { ...message, createdAt: formattedCreatedAt };
     },
 
     async getConversation(userId, contactId) {
@@ -263,6 +271,32 @@ export function createMySqlRepository() {
       );
 
       return rows.map(mapMessage);
+    },
+
+    async markConversationRead(userId, contactId) {
+      const readAt = new Date();
+      const formattedReadAt = readAt.toISOString().slice(0, 19).replace("T", " ");
+      const [rows] = await pool.query(
+        `SELECT id
+         FROM messages
+         WHERE sender_id = :contactId
+           AND receiver_id = :userId
+           AND status <> 'read'`,
+        { userId, contactId }
+      );
+      const updatedIds = rows.map((row) => row.id);
+
+      if (updatedIds.length > 0) {
+        await pool.query(
+          `UPDATE messages
+           SET status = 'read',
+               read_at = :readAt
+           WHERE id IN (:updatedIds)`,
+          { readAt: formattedReadAt, updatedIds }
+        );
+      }
+
+      return { updatedIds, status: "read", readAt: readAt.toISOString() };
     },
 
     async softDeleteConversation(userId, contactId) {

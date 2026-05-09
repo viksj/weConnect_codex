@@ -28,6 +28,7 @@ function mapMessage(document) {
     sourceLanguage: document.sourceLanguage,
     targetLanguage: document.targetLanguage,
     status: document.status,
+    readAt: document.readAt,
     createdAt: document.createdAt
   };
 }
@@ -165,6 +166,33 @@ export function createMongoRepository() {
         .toArray();
 
       return documents.map(mapMessage);
+    },
+
+    async markConversationRead(userId, contactId) {
+      const readAt = new Date().toISOString();
+      const unreadMessages = await messagesCollection()
+        .find({
+          senderId: contactId,
+          receiverId: userId,
+          status: { $ne: "read" }
+        })
+        .project({ id: 1 })
+        .toArray();
+      const updatedIds = unreadMessages.map((message) => message.id);
+
+      if (updatedIds.length > 0) {
+        await messagesCollection().updateMany(
+          { id: { $in: updatedIds } },
+          {
+            $set: {
+              status: "read",
+              readAt
+            }
+          }
+        );
+      }
+
+      return { updatedIds, status: "read", readAt };
     },
 
     async softDeleteConversation(userId, contactId) {

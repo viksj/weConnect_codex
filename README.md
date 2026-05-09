@@ -2,51 +2,228 @@
 
 Web-first real-time translation chat app with Firebase Phone Auth, MySQL storage, and Socket.IO messaging.
 
-## Stack
+## Features
 
-- Backend: Node.js, Express, Socket.IO
-- Frontend: React, Vite, Socket.IO Client
-- Mobile: Expo React Native for Android and iOS, optional later phase
-- Auth: Firebase Phone Authentication
-- Translation: mock AI translation service with Hindi/English sample phrases
-- Storage: database adapter layer with Memory, MySQL, and MongoDB providers
+- 🌐 **Real-time Translation**: AI-powered translation between languages
+- 🔐 **End-to-End Encryption**: Messages encrypted using AES
+- 📱 **Cross-Platform**: Web, Android, and iOS support
+- 📞 **Voice & Video Calls**: WebRTC-based calling with translation
+- 👥 **Contact Management**: Find and chat with registered users
+- 🌍 **Multi-Language**: Support for Hindi, English, and more
 
-## Web Local Test
+## Quick Start
 
-Use this path when testing the web app locally before buying a domain or hosting.
+### Prerequisites
 
-1. Install web dependencies:
+- Node.js 18+
+- MySQL 8.0+
+- Firebase project with Phone Authentication enabled
 
-```bash
-npm run install:web
-```
-
-2. Make sure these local env files exist:
-
-```text
-server/.env
-client/.env
-server/firebase-service-account.json
-```
-
-3. In Firebase Console, confirm:
-
-- Authentication > Sign-in method > Phone is enabled
-- Authentication > Settings > Authorized domains contains `localhost`
-
-4. Start server and client:
+### Automated Setup
 
 ```bash
-npm run dev
+# Make setup script executable and run it
+chmod +x setup.sh
+./setup.sh
 ```
 
-5. Open the web app:
+### Manual Setup
 
-```text
-http://localhost:5173
+1. **Install Dependencies**
+```bash
+# Install all dependencies
+npm run install:all
 ```
 
-The backend runs at `http://localhost:4000`.
+2. **Environment Configuration**
+
+Copy and configure environment files:
+
+```bash
+# Server
+cp server/.env.example server/.env
+
+# Client
+cp client/.env.example client/.env
+
+# Mobile
+cp mobile/.env.example mobile/.env
+```
+
+**Required Environment Variables:**
+
+**server/.env:**
+```env
+PORT=4000
+NODE_ENV=development
+FIREBASE_PROJECT_ID=your_firebase_project_id
+FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
+CLIENT_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+EXPO_ORIGINS=exp://
+ENCRYPTION_KEY=weconnect-translation-chat-secret-key-2024
+
+DB_PROVIDER=mysql
+MYSQL_HOST=localhost
+MYSQL_USER=your_mysql_user
+MYSQL_PASSWORD=your_mysql_password
+MYSQL_DATABASE=weconnect
+
+# Optional AI translation provider
+TRANSLATION_PROVIDER=openai
+OPENAI_API_KEY=sk-your_key
+OPENAI_TRANSLATION_MODEL=gpt-4.1-mini
+```
+
+**client/.env:**
+```env
+VITE_API_URL=http://localhost:4000
+VITE_ENCRYPTION_KEY=weconnect-translation-chat-secret-key-2024
+VITE_FIREBASE_API_KEY=your_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project_id
+```
+
+**mobile/.env:**
+```env
+EXPO_PUBLIC_API_URL=http://localhost:4000
+```
+
+3. **Database Setup**
+
+Ensure MySQL is running and create the database:
+
+```sql
+CREATE DATABASE IF NOT EXISTS weconnect
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+```
+
+The server will automatically create tables on first run.
+
+4. **Firebase Setup**
+
+- Create a Firebase project
+- Enable Phone Authentication
+- Download service account key to `server/firebase-service-account.json`
+- Add authorized domains: `localhost`, `127.0.0.1`
+
+## Development
+
+### Start All Services
+
+```bash
+# Terminal 1: Start server
+cd server && npm run dev
+
+# Terminal 2: Start web client
+cd client && npm run dev
+
+# Terminal 3: Start mobile app
+cd mobile && npm start
+```
+
+### Available URLs
+
+- **Web Client**: http://localhost:5173
+- **Server API**: http://localhost:4000
+- **Health Check**: http://localhost:4000/health
+
+## Project Structure
+
+```
+weConnect_codex/
+├── client/          # React web application
+├── mobile/          # React Native mobile app
+├── server/          # Node.js backend server
+│   ├── src/
+│   │   ├── db/      # Database repositories
+│   │   ├── encryptionService.js
+│   │   ├── firebaseAdmin.js
+│   │   ├── index.js
+│   │   └── translationService.js
+│   └── database/
+├── setup.sh         # Automated setup script
+└── README.md
+```
+
+## API Endpoints
+
+### Authentication
+- `POST /api/register` - Register new user
+- `POST /api/verify-otp` - Verify OTP (demo mode)
+
+### Users
+- `PATCH /api/users/:userId` - Update user profile
+- `GET /api/users/:userId/contacts` - Get user contacts
+- `POST /api/users/:userId/contacts` - Add contact
+
+### Messages
+- `GET /api/users/:userId/conversations/:contactId` - Get conversation
+- `DELETE /api/users/:userId/conversations/:contactId` - Delete conversation
+
+### Translation
+- `POST /api/translate` - Manual translation
+
+Set `TRANSLATION_PROVIDER=openai` for AI translation, or `TRANSLATION_PROVIDER=libretranslate` with `LIBRE_TRANSLATE_URL` for a self-hosted/open provider. Without a provider, the server uses a small local Hindi/English fallback dictionary so the app can still run in development.
+
+## Socket.IO Events
+
+### Connection
+- `user:online` - Mark user as online
+- `message:new` - Receive new message
+- `contacts:update` - Update contacts list
+
+### Messaging
+- `message:send` - Send message to user
+- `message:read` - Mark a conversation as read
+- `message:status` - Receive delivered/read status updates
+- `typing` - Send and receive typing indicators
+
+### Calling
+- `call:invite` - Initiate call
+- `call:accept` - Accept call
+- `call:reject` - Reject call
+- `call:end` - End call
+
+## Security
+
+- **Message Encryption**: All messages are encrypted using AES-256
+- **Firebase Auth**: Secure authentication with phone numbers
+- **Input Validation**: Server-side validation for all inputs
+- **CORS Protection**: Configured allowed origins
+
+## Deployment
+
+### Production Checklist
+
+1. Update environment variables for production domains
+2. Set `NODE_ENV=production`
+3. Configure production database
+4. Set up SSL certificates
+5. Configure TURN server for WebRTC calls
+6. Set up monitoring and logging
+
+### Build Commands
+
+```bash
+# Build web client
+cd client && npm run build
+
+# Build mobile app
+cd mobile && npx expo build:android
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License.
 
 ## Web Production Checklist
 

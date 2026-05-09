@@ -452,6 +452,18 @@ select:focus {
   background: #fff;
 }
 
+.icon-actions button.active,
+.composer button.active {
+  color: #fff;
+  background: var(--blue);
+  border-color: var(--blue);
+}
+
+.composer button.danger-soft {
+  background: #b42318;
+  border-color: #b42318;
+}
+
 .call-actions button.danger {
   color: #b42318;
   background: #fff4f2;

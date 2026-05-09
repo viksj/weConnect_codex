@@ -7,6 +7,7 @@ import { v4 as uuid } from "uuid";
 import { createDatabase } from "./db/index.js";
 import { firebaseAdminAuth, verifyFirebaseToken } from "./firebaseAdmin.js";
 import { detectLanguage, translateText } from "./translationService.js";
+import { encryptMessage, decryptMessage } from "./encryptionService.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -332,16 +333,19 @@ io.on("connection", (socket) => {
 
     if (!sender || !receiver || !text?.trim()) return;
 
-    const sourceLanguage = detectLanguage(text, sender.motherTongue);
-    const translatedText = await translateText(text, sourceLanguage, receiver.motherTongue);
+    // Decrypt the incoming encrypted message
+    const decryptedText = decryptMessage(text);
+
+    const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
+    const translatedText = await translateText(decryptedText, sourceLanguage, receiver.motherTongue);
     await database.addContact(sender.id, receiverId);
     await database.addContact(receiverId, sender.id);
     const message = await database.saveMessage({
       id: uuid(),
       senderId: sender.id,
       receiverId,
-      originalText: text.trim(),
-      translatedText,
+      originalText: encryptMessage(decryptedText.trim()),
+      translatedText: encryptMessage(translatedText),
       sourceLanguage,
       targetLanguage: receiver.motherTongue,
       createdAt: new Date().toISOString(),
@@ -350,6 +354,40 @@ io.on("connection", (socket) => {
 
     io.to(sender.id).emit("message:new", message);
     io.to(receiverId).emit("message:new", message);
+  });
+
+  socket.on("message:read", async ({ contactId }) => {
+    const reader = socket.data.user;
+    if (!reader || !contactId) return;
+
+    const result = await database.markConversationRead(reader.id, contactId);
+    if (result.updatedIds.length === 0) return;
+
+    io.to(reader.id).emit("message:status", {
+      contactId,
+      readerId: reader.id,
+      messageIds: result.updatedIds,
+      status: result.status,
+      readAt: result.readAt
+    });
+    io.to(contactId).emit("message:status", {
+      contactId: reader.id,
+      readerId: reader.id,
+      messageIds: result.updatedIds,
+      status: result.status,
+      readAt: result.readAt
+    });
+  });
+
+  socket.on("typing", ({ receiverId, isTyping }) => {
+    const sender = socket.data.user;
+    if (!sender || !receiverId) return;
+
+    io.to(receiverId).emit("typing", {
+      senderId: sender.id,
+      senderName: sender.name,
+      isTyping: Boolean(isTyping)
+    });
   });
 
   socket.on("call:invite", (payload) => {

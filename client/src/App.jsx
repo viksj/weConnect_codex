@@ -17,7 +17,8 @@ import {
   Trash2,
   UserRound,
   Video,
-  VideoOff
+  VideoOff,
+  Volume2
 } from "lucide-react";
 import React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,8 @@ import {
 } from "./api";
 import { languageName, languages } from "./constants";
 import { firebaseAuth, isFirebaseConfigured } from "./firebase";
+import { encryptMessage, decryptMessage } from "./encryptionService";
+import { playVoiceTranslation, stopVoicePlayback } from "./voiceTranslator";
 
 const demoUser = {
   name: "You",
@@ -63,6 +66,25 @@ function speechRecognitionConstructor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
+function speechLocale(language) {
+  const locales = {
+    hi: "hi-IN",
+    en: "en-US",
+    te: "te-IN",
+    ta: "ta-IN",
+    kn: "kn-IN",
+    ml: "ml-IN",
+    mr: "mr-IN",
+    gu: "gu-IN",
+    bn: "bn-IN",
+    pa: "pa-IN",
+    es: "es-ES",
+    fr: "fr-FR",
+    de: "de-DE"
+  };
+  return locales[language] || "en-US";
+}
+
 function canNotify() {
   return "Notification" in window && Notification.permission === "granted";
 }
@@ -84,6 +106,9 @@ export function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     "Notification" in window && Notification.permission === "granted"
   );
+  const [voiceTranslationEnabled, setVoiceTranslationEnabled] = useState(false);
+  const [typingContactId, setTypingContactId] = useState("");
+  const [isRecordingVoiceMessage, setIsRecordingVoiceMessage] = useState(false);
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [call, setCall] = useState({
@@ -106,6 +131,8 @@ export function App() {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const recognitionRef = useRef(null);
+  const voiceMessageRecognitionRef = useRef(null);
+  const typingStopTimeoutRef = useRef(null);
   const pendingIceRef = useRef([]);
   const callRef = useRef(call);
   const contactsRef = useRef(contacts);
@@ -156,16 +183,53 @@ export function App() {
     });
 
     socket.on("message:new", (message) => {
+      // Decrypt the message texts
+      const decryptedMessage = {
+        ...message,
+        originalText: decryptMessage(message.originalText),
+        translatedText: decryptMessage(message.translatedText)
+      };
+
       setMessages((current) => {
-        const exists = current.some((item) => item.id === message.id);
+        const exists = current.some((item) => item.id === decryptedMessage.id);
         if (exists) return current;
-        return [...current, message];
+        return [...current, decryptedMessage];
       });
+
+      // Play voice translation if enabled and message is from someone else
+      if (message.senderId !== user.id && voiceTranslationEnabled) {
+        const textToSpeak = decryptedMessage.translatedText || decryptedMessage.originalText;
+        const language = decryptedMessage.targetLanguage || user?.understands || "en";
+        try {
+          playVoiceTranslation(textToSpeak, language, 1, 1, 0.8);
+        } catch (error) {
+          console.error("Voice translation failed:", error);
+        }
+      }
+
       if (message.senderId !== user.id && canNotify()) {
         new Notification("New WeConnect message", {
-          body: message.translatedText || message.originalText
+          body: decryptedMessage.translatedText || decryptedMessage.originalText
         });
       }
+    });
+
+    socket.on("message:status", ({ messageIds, status, readAt }) => {
+      setMessages((current) =>
+        current.map((message) =>
+          messageIds.includes(message.id)
+            ? {
+                ...message,
+                status,
+                readAt
+              }
+            : message
+        )
+      );
+    });
+
+    socket.on("typing", ({ senderId, isTyping }) => {
+      setTypingContactId(isTyping ? senderId : "");
     });
 
     socket.on("call:incoming", ({ callId, type, senderId, senderName }) => {
@@ -283,7 +347,15 @@ export function App() {
     if (!user || !activeContact || !authToken) return;
 
     getConversation(user.id, activeContact.id, authToken)
-      .then(({ messages: items }) => setMessages(items))
+      .then(({ messages: items }) => {
+        // Decrypt stored messages
+        const decryptedMessages = items.map(message => ({
+          ...message,
+          originalText: decryptMessage(message.originalText),
+          translatedText: decryptMessage(message.translatedText)
+        }));
+        setMessages(decryptedMessages);
+      })
       .catch(() => setError("Conversation load nahi ho paayi."));
   }, [user, activeContact?.id, authToken]);
 
@@ -299,6 +371,16 @@ export function App() {
       return sent || received;
     });
   }, [messages, user, activeContact]);
+
+  useEffect(() => {
+    if (!user || !activeContact || !socketRef.current) return;
+    const unreadReceived = visibleMessages.some(
+      (message) => message.senderId === activeContact.id && message.receiverId === user.id && message.status !== "read"
+    );
+    if (unreadReceived) {
+      socketRef.current.emit("message:read", { contactId: activeContact.id });
+    }
+  }, [visibleMessages, user, activeContact]);
 
   async function handleRegister(event) {
     event.preventDefault();
@@ -316,11 +398,12 @@ export function App() {
         });
       }
 
-      const result = await signInWithPhoneNumber(firebaseAuth, form.emailOrPhone, recaptchaVerifierRef.current);
+      const result = await signInWithPhoneNumber(firebaseAuth, form.emailOrPhone.trim(), recaptchaVerifierRef.current);
       setConfirmationResult(result);
       setOtp("");
       setStep("verify");
     } catch (caughtError) {
+      console.error("OTP send failed:", caughtError);
       recaptchaVerifierRef.current?.clear();
       recaptchaVerifierRef.current = null;
       setError(
@@ -343,7 +426,12 @@ export function App() {
         throw new Error("Missing confirmation");
       }
 
-      const firebaseCredential = await confirmationResult.confirm(otp);
+      const verificationCode = otp.trim();
+      if (!verificationCode || verificationCode.length < 4) {
+        throw new Error("Invalid verification code");
+      }
+
+      const firebaseCredential = await confirmationResult.confirm(verificationCode);
       const token = await firebaseCredential.user.getIdToken();
       const result = await registerUser({
         ...form,
@@ -353,8 +441,13 @@ export function App() {
       setUser(result.user);
       setProfileForm(result.user);
       setStep("chat");
-    } catch {
-      setError("OTP verify nahi hua. SMS wala code dobara check karo.");
+    } catch (caughtError) {
+      console.error("OTP verify failed:", caughtError);
+      const message =
+        caughtError.code === "auth/invalid-verification-code"
+          ? "OTP invalid hai. Firebase test number ke saath wahi code daalein jo console me dikha hai."
+          : "OTP verify nahi hua. SMS wala code dobara check karo.";
+      setError(message);
     } finally {
       setIsVerifyingOtp(false);
     }
@@ -364,12 +457,78 @@ export function App() {
     event.preventDefault();
     if (!messageText.trim() || !user || !activeContact) return;
 
+    socketRef.current?.emit("typing", {
+      receiverId: activeContact.id,
+      isTyping: false
+    });
     socketRef.current?.emit("message:send", {
       senderId: user.id,
       receiverId: activeContact.id,
-      text: messageText
+      text: encryptMessage(messageText)
     });
     setMessageText("");
+  }
+
+  function updateMessageDraft(value) {
+    setMessageText(value);
+    if (!activeContact || !socketRef.current) return;
+
+    socketRef.current.emit("typing", {
+      receiverId: activeContact.id,
+      isTyping: Boolean(value.trim())
+    });
+
+    window.clearTimeout(typingStopTimeoutRef.current);
+    typingStopTimeoutRef.current = window.setTimeout(() => {
+      socketRef.current?.emit("typing", {
+        receiverId: activeContact.id,
+        isTyping: false
+      });
+    }, 1200);
+  }
+
+  function sendVoiceTranscript(transcript) {
+    if (!transcript.trim() || !user || !activeContact) return;
+    socketRef.current?.emit("message:send", {
+      senderId: user.id,
+      receiverId: activeContact.id,
+      text: encryptMessage(transcript)
+    });
+  }
+
+  function toggleVoiceMessageRecording() {
+    if (isRecordingVoiceMessage) {
+      voiceMessageRecognitionRef.current?.stop?.();
+      return;
+    }
+
+    const Recognition = speechRecognitionConstructor();
+    if (!Recognition) {
+      setError("Browser speech recognition supported nahi hai.");
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = speechLocale(user?.motherTongue);
+    recognition.onstart = () => setIsRecordingVoiceMessage(true);
+    recognition.onend = () => {
+      setIsRecordingVoiceMessage(false);
+      voiceMessageRecognitionRef.current = null;
+    };
+    recognition.onerror = () => {
+      setIsRecordingVoiceMessage(false);
+      voiceMessageRecognitionRef.current = null;
+      setError("Voice message record nahi ho paaya.");
+    };
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length - 1]?.[0]?.transcript?.trim();
+      if (transcript) sendVoiceTranscript(transcript);
+    };
+
+    voiceMessageRecognitionRef.current = recognition;
+    recognition.start();
   }
 
   async function handleSaveProfile(event) {
@@ -616,7 +775,7 @@ export function App() {
     const recognition = new Recognition();
     recognition.continuous = true;
     recognition.interimResults = false;
-    recognition.lang = user.motherTongue === "hi" ? "hi-IN" : "en-US";
+    recognition.lang = speechLocale(user.motherTongue);
 
     recognition.onresult = async (event) => {
       const result = event.results[event.results.length - 1];
@@ -827,9 +986,27 @@ export function App() {
           <header className="conversation-header">
             <div>
               <strong>{activeContact?.name || "Select contact"}</strong>
-              <span>{activeContact ? `${languageName[activeContact.motherTongue]} preferred` : "No contact selected"}</span>
+              <span>
+                {activeContact && typingContactId === activeContact.id
+                  ? `${activeContact.name} is typing...`
+                  : activeContact
+                    ? `${languageName[activeContact.motherTongue]} preferred`
+                    : "No contact selected"}
+              </span>
             </div>
             <div className="icon-actions">
+              <button
+                disabled={!user}
+                className={voiceTranslationEnabled ? "active" : ""}
+                title="Read translated incoming messages aloud"
+                type="button"
+                onClick={() => {
+                  if (voiceTranslationEnabled) stopVoicePlayback();
+                  setVoiceTranslationEnabled((current) => !current);
+                }}
+              >
+                <Volume2 size={18} />
+              </button>
               <button disabled={!user || !activeContact} title="Delete chat for me" type="button" onClick={handleDeleteChat}>
                 <Trash2 size={18} />
               </button>
@@ -859,7 +1036,9 @@ export function App() {
                 <article className={`message ${mine ? "mine" : "theirs"}`} key={message.id}>
                   <p>{textToShow}</p>
                   <small>
-                    {languageName[message.sourceLanguage]} to {languageName[message.targetLanguage]} · {helperText}
+                    {languageName[message.sourceLanguage] || message.sourceLanguage} to{" "}
+                    {languageName[message.targetLanguage] || message.targetLanguage} · {helperText}
+                    {mine ? ` · ${message.status === "read" ? "Read" : "Delivered"}` : ""}
                   </small>
                 </article>
               );
@@ -868,14 +1047,20 @@ export function App() {
           </div>
 
           <form className="composer" onSubmit={sendMessage}>
-            <button type="button" title="Voice message">
+            <button
+              className={isRecordingVoiceMessage ? "active danger-soft" : ""}
+              disabled={!user || !activeContact}
+              type="button"
+              title={isRecordingVoiceMessage ? "Stop voice message" : "Voice message"}
+              onClick={toggleVoiceMessageRecording}
+            >
               <Mic size={19} />
             </button>
             <input
               disabled={!user || !activeContact}
-              placeholder="Type a message..."
+              placeholder={isRecordingVoiceMessage ? "Listening..." : "Type a message..."}
               value={messageText}
-              onChange={(event) => setMessageText(event.target.value)}
+              onChange={(event) => updateMessageDraft(event.target.value)}
             />
             <button className="send-button" type="submit" title="Send">
               <Send size={19} />
