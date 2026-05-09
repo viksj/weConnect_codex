@@ -7,6 +7,7 @@ import {
   Lock,
   Mic,
   MicOff,
+  Paperclip,
   Phone,
   PhoneOff,
   Plus,
@@ -15,6 +16,7 @@ import {
   Settings,
   Shield,
   Trash2,
+  UsersRound,
   UserRound,
   Video,
   VideoOff,
@@ -27,11 +29,15 @@ import { io } from "socket.io-client";
 import {
   API_URL,
   addContact,
+  createGroup,
   deleteConversation,
   getContacts,
   getConversation,
+  getGroupConversation,
+  getGroups,
   registerUser,
   translateCaption,
+  uploadLocalMedia,
   updateUser
 } from "./api";
 import { languageName, languages } from "./constants";
@@ -89,6 +95,31 @@ function canNotify() {
   return "Notification" in window && Notification.permission === "granted";
 }
 
+function decryptMaybe(value) {
+  return value ? decryptMessage(value) : "";
+}
+
+function mediaHref(url) {
+  if (!url) return "";
+  if (/^https?:\/\//.test(url)) return url;
+  return `${API_URL}${url}`;
+}
+
+function mediaKind(file) {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("audio/")) return "audio";
+  return "file";
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export function App() {
   const [step, setStep] = useState("register");
   const [form, setForm] = useState(demoUser);
@@ -99,7 +130,13 @@ export function App() {
   const [user, setUser] = useState(null);
   const [authToken, setAuthToken] = useState("");
   const [contacts, setContacts] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [selectedContact, setSelectedContact] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [chatFilter, setChatFilter] = useState("all");
+  const [contactSearch, setContactSearch] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [groupMemberIds, setGroupMemberIds] = useState([]);
   const [profileForm, setProfileForm] = useState(demoUser);
   const [addContactText, setAddContactText] = useState("");
   const [inviteInfo, setInviteInfo] = useState(null);
@@ -123,6 +160,7 @@ export function App() {
   });
   const [error, setError] = useState("");
   const socketRef = useRef(null);
+  const fileInputRef = useRef(null);
   const messageEndRef = useRef(null);
   const recaptchaVerifierRef = useRef(null);
   const peerRef = useRef(null);
@@ -131,21 +169,69 @@ export function App() {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const recognitionRef = useRef(null);
-  const voiceMessageRecognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordedVoiceChunksRef = useRef([]);
   const typingStopTimeoutRef = useRef(null);
   const pendingIceRef = useRef([]);
   const callRef = useRef(call);
   const contactsRef = useRef(contacts);
 
-  const activeContact = selectedContact || contacts[0];
+  const activeContact = selectedContact || (chatFilter === "groups" ? null : contacts[0]);
+  const activeChat = selectedGroup || activeContact;
+  const isGroupChat = Boolean(selectedGroup);
+  const filteredContacts = useMemo(() => {
+    const query = contactSearch.trim().toLowerCase();
+    const items = chatFilter === "groups" ? groups : contacts;
+    return items.filter((contact) => {
+      const matchesSearch =
+        !query ||
+        contact.name?.toLowerCase().includes(query) ||
+        contact.emailOrPhone?.toLowerCase().includes(query);
+      const matchesFilter =
+        chatFilter === "all" ||
+        (chatFilter === "unread" && Number(contact.unreadCount || 0) > 0) ||
+        (chatFilter === "groups" && contact.type === "group");
+      return matchesSearch && matchesFilter;
+    });
+  }, [contacts, groups, contactSearch, chatFilter]);
 
   async function loadContacts() {
     if (!user || !authToken) return;
     const { contacts: items } = await getContacts(user.id, authToken);
-    setContacts(items);
+    const decryptedContacts = items.map((contact) => ({
+      ...contact,
+      lastMessage: contact.lastMessage
+        ? {
+            ...contact.lastMessage,
+            originalText: decryptMaybe(contact.lastMessage.originalText),
+            translatedText: decryptMaybe(contact.lastMessage.translatedText)
+          }
+        : null
+    }));
+    setContacts(decryptedContacts);
     setSelectedContact((current) => {
-      if (current && items.some((item) => item.id === current.id)) return current;
-      return items[0] || null;
+      if (current && decryptedContacts.some((item) => item.id === current.id)) return current;
+      return decryptedContacts[0] || null;
+    });
+  }
+
+  async function loadGroups() {
+    if (!user || !authToken) return;
+    const { groups: items } = await getGroups(user.id, authToken);
+    const decryptedGroups = items.map((group) => ({
+      ...group,
+      lastMessage: group.lastMessage
+        ? {
+            ...group.lastMessage,
+            originalText: decryptMaybe(group.lastMessage.originalText),
+            translatedText: decryptMaybe(group.lastMessage.translatedText)
+          }
+        : null
+    }));
+    setGroups(decryptedGroups);
+    setSelectedGroup((current) => {
+      if (current && decryptedGroups.some((item) => item.id === current.id)) return current;
+      return current;
     });
   }
 
@@ -182,12 +268,16 @@ export function App() {
       loadContacts().catch(() => undefined);
     });
 
+    socket.on("groups:update", () => {
+      loadGroups().catch(() => undefined);
+    });
+
     socket.on("message:new", (message) => {
       // Decrypt the message texts
       const decryptedMessage = {
         ...message,
-        originalText: decryptMessage(message.originalText),
-        translatedText: decryptMessage(message.translatedText)
+        originalText: decryptMaybe(message.originalText),
+        translatedText: decryptMaybe(message.translatedText)
       };
 
       setMessages((current) => {
@@ -195,6 +285,38 @@ export function App() {
         if (exists) return current;
         return [...current, decryptedMessage];
       });
+      if (decryptedMessage.groupId) {
+        setGroups((current) =>
+          current.map((group) => {
+            if (decryptedMessage.groupId !== group.id) return group;
+            return {
+              ...group,
+              lastMessage: decryptedMessage,
+              unreadCount:
+                decryptedMessage.senderId !== user.id && selectedGroup?.id !== group.id
+                  ? Number(group.unreadCount || 0) + 1
+                  : group.unreadCount || 0
+            };
+          })
+        );
+      } else {
+        setContacts((current) =>
+          current.map((contact) => {
+            const belongsToContact =
+              decryptedMessage.senderId === contact.id || decryptedMessage.receiverId === contact.id;
+            if (!belongsToContact) return contact;
+
+            return {
+              ...contact,
+              lastMessage: decryptedMessage,
+              unreadCount:
+                decryptedMessage.senderId === contact.id && decryptedMessage.receiverId === user.id
+                  ? Number(contact.unreadCount || 0) + 1
+                  : contact.unreadCount || 0
+            };
+          })
+        );
+      }
 
       // Play voice translation if enabled and message is from someone else
       if (message.senderId !== user.id && voiceTranslationEnabled) {
@@ -214,7 +336,7 @@ export function App() {
       }
     });
 
-    socket.on("message:status", ({ messageIds, status, readAt }) => {
+    socket.on("message:status", ({ messageIds, status, readAt, groupId }) => {
       setMessages((current) =>
         current.map((message) =>
           messageIds.includes(message.id)
@@ -226,10 +348,26 @@ export function App() {
             : message
         )
       );
+      setContacts((current) =>
+        current.map((contact) => ({
+          ...contact,
+          unreadCount:
+            status === "read" && contact.lastMessage && messageIds.includes(contact.lastMessage.id)
+              ? 0
+              : contact.unreadCount
+        }))
+      );
+      if (messageIds.length > 0) {
+        setGroups((current) =>
+          current.map((group) =>
+            group.id === groupId ? { ...group, unreadCount: 0 } : group
+          )
+        );
+      }
     });
 
-    socket.on("typing", ({ senderId, isTyping }) => {
-      setTypingContactId(isTyping ? senderId : "");
+    socket.on("typing", ({ senderId, groupId, isTyping }) => {
+      setTypingContactId(isTyping ? groupId || senderId : "");
     });
 
     socket.on("call:incoming", ({ callId, type, senderId, senderName }) => {
@@ -330,6 +468,8 @@ export function App() {
 
     loadContacts()
       .catch(() => setError("Contacts load nahi ho paaye."));
+    loadGroups()
+      .catch(() => setError("Groups load nahi ho paaye."));
   }, [user, authToken]);
 
   useEffect(() => {
@@ -344,43 +484,62 @@ export function App() {
   }, [user]);
 
   useEffect(() => {
-    if (!user || !activeContact || !authToken) return;
+    if (!user || !activeChat || !authToken) return;
 
-    getConversation(user.id, activeContact.id, authToken)
+    const loadConversation = isGroupChat
+      ? getGroupConversation(user.id, activeChat.id, authToken)
+      : getConversation(user.id, activeChat.id, authToken);
+
+    loadConversation
       .then(({ messages: items }) => {
         // Decrypt stored messages
         const decryptedMessages = items.map(message => ({
           ...message,
-          originalText: decryptMessage(message.originalText),
-          translatedText: decryptMessage(message.translatedText)
+          originalText: decryptMaybe(message.originalText),
+          translatedText: decryptMaybe(message.translatedText)
         }));
         setMessages(decryptedMessages);
       })
       .catch(() => setError("Conversation load nahi ho paayi."));
-  }, [user, activeContact?.id, authToken]);
+  }, [user, activeChat?.id, isGroupChat, authToken]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const visibleMessages = useMemo(() => {
-    if (!user || !activeContact) return [];
+    if (!user || !activeChat) return [];
+    if (isGroupChat) {
+      return messages.filter((message) => message.groupId === activeChat.id);
+    }
     return messages.filter((message) => {
-      const sent = message.senderId === user.id && message.receiverId === activeContact.id;
-      const received = message.senderId === activeContact.id && message.receiverId === user.id;
+      const sent = message.senderId === user.id && message.receiverId === activeChat.id;
+      const received = message.senderId === activeChat.id && message.receiverId === user.id;
       return sent || received;
     });
-  }, [messages, user, activeContact]);
+  }, [messages, user, activeChat, isGroupChat]);
 
   useEffect(() => {
-    if (!user || !activeContact || !socketRef.current) return;
-    const unreadReceived = visibleMessages.some(
-      (message) => message.senderId === activeContact.id && message.receiverId === user.id && message.status !== "read"
-    );
+    if (!user || !activeChat || !socketRef.current) return;
+    const unreadReceived = isGroupChat
+      ? visibleMessages.some((message) => message.senderId !== user.id && message.status !== "read")
+      : visibleMessages.some(
+          (message) => message.senderId === activeChat.id && message.receiverId === user.id && message.status !== "read"
+        );
     if (unreadReceived) {
-      socketRef.current.emit("message:read", { contactId: activeContact.id });
+      if (isGroupChat) {
+        socketRef.current.emit("group:read", { groupId: activeChat.id });
+        setGroups((current) =>
+          current.map((group) => (group.id === activeChat.id ? { ...group, unreadCount: 0 } : group))
+        );
+      } else {
+        socketRef.current.emit("message:read", { contactId: activeChat.id });
+        setContacts((current) =>
+          current.map((contact) => (contact.id === activeChat.id ? { ...contact, unreadCount: 0 } : contact))
+        );
+      }
     }
-  }, [visibleMessages, user, activeContact]);
+  }, [visibleMessages, user, activeChat, isGroupChat]);
 
   async function handleRegister(event) {
     event.preventDefault();
@@ -455,15 +614,16 @@ export function App() {
 
   function sendMessage(event) {
     event.preventDefault();
-    if (!messageText.trim() || !user || !activeContact) return;
+    if (!messageText.trim() || !user || !activeChat) return;
 
     socketRef.current?.emit("typing", {
-      receiverId: activeContact.id,
+      receiverId: isGroupChat ? undefined : activeChat.id,
+      groupId: isGroupChat ? activeChat.id : undefined,
       isTyping: false
     });
-    socketRef.current?.emit("message:send", {
-      senderId: user.id,
-      receiverId: activeContact.id,
+    socketRef.current?.emit(isGroupChat ? "group:message:send" : "message:send", {
+      receiverId: isGroupChat ? undefined : activeChat.id,
+      groupId: isGroupChat ? activeChat.id : undefined,
       text: encryptMessage(messageText)
     });
     setMessageText("");
@@ -471,64 +631,102 @@ export function App() {
 
   function updateMessageDraft(value) {
     setMessageText(value);
-    if (!activeContact || !socketRef.current) return;
+    if (!activeChat || !socketRef.current) return;
 
     socketRef.current.emit("typing", {
-      receiverId: activeContact.id,
+      receiverId: isGroupChat ? undefined : activeChat.id,
+      groupId: isGroupChat ? activeChat.id : undefined,
       isTyping: Boolean(value.trim())
     });
 
     window.clearTimeout(typingStopTimeoutRef.current);
     typingStopTimeoutRef.current = window.setTimeout(() => {
       socketRef.current?.emit("typing", {
-        receiverId: activeContact.id,
+        receiverId: isGroupChat ? undefined : activeChat.id,
+        groupId: isGroupChat ? activeChat.id : undefined,
         isTyping: false
       });
     }, 1200);
   }
 
-  function sendVoiceTranscript(transcript) {
-    if (!transcript.trim() || !user || !activeContact) return;
-    socketRef.current?.emit("message:send", {
-      senderId: user.id,
-      receiverId: activeContact.id,
-      text: encryptMessage(transcript)
-    });
+  async function sendMediaMessage(file, forcedType) {
+    if (!user || !authToken || !activeChat || !file) return;
+
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const { upload } = await uploadLocalMedia(user.id, { dataUrl, name: file.name }, authToken);
+      const messageType = forcedType || mediaKind(file);
+      socketRef.current?.emit(isGroupChat ? "group:message:send" : "message:send", {
+        receiverId: isGroupChat ? undefined : activeChat.id,
+        groupId: isGroupChat ? activeChat.id : undefined,
+        text: encryptMessage(messageType === "audio" ? "Voice message" : file.name),
+        messageType,
+        mediaUrl: upload.url,
+        mediaName: upload.name,
+        mediaMime: upload.mimeType
+      });
+    } catch (caughtError) {
+      console.error("Media upload failed:", caughtError);
+      setError("Media upload nahi ho paaya.");
+    }
+  }
+
+  async function handleAttachment(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) await sendMediaMessage(file);
+  }
+
+  async function stopVoiceRecording() {
+    mediaRecorderRef.current?.stop();
+  }
+
+  async function startVoiceRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setError("Browser audio recording supported nahi hai.");
+      return;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    recordedVoiceChunksRef.current = [];
+    mediaRecorderRef.current = recorder;
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) recordedVoiceChunksRef.current.push(event.data);
+    };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      setIsRecordingVoiceMessage(false);
+      const blob = new Blob(recordedVoiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+      recordedVoiceChunksRef.current = [];
+      mediaRecorderRef.current = null;
+      if (blob.size === 0) return;
+      const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || "audio/webm" });
+      await sendMediaMessage(file, "audio");
+    };
+    recorder.onerror = () => {
+      stream.getTracks().forEach((track) => track.stop());
+      setIsRecordingVoiceMessage(false);
+      mediaRecorderRef.current = null;
+      setError("Voice message record nahi ho paaya.");
+    };
+
+    recorder.start();
+    setIsRecordingVoiceMessage(true);
   }
 
   function toggleVoiceMessageRecording() {
     if (isRecordingVoiceMessage) {
-      voiceMessageRecognitionRef.current?.stop?.();
+      stopVoiceRecording();
       return;
     }
 
-    const Recognition = speechRecognitionConstructor();
-    if (!Recognition) {
-      setError("Browser speech recognition supported nahi hai.");
-      return;
-    }
-
-    const recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = speechLocale(user?.motherTongue);
-    recognition.onstart = () => setIsRecordingVoiceMessage(true);
-    recognition.onend = () => {
+    startVoiceRecording().catch((caughtError) => {
+      console.error("Voice recording failed:", caughtError);
       setIsRecordingVoiceMessage(false);
-      voiceMessageRecognitionRef.current = null;
-    };
-    recognition.onerror = () => {
-      setIsRecordingVoiceMessage(false);
-      voiceMessageRecognitionRef.current = null;
-      setError("Voice message record nahi ho paaya.");
-    };
-    recognition.onresult = (event) => {
-      const transcript = event.results[event.results.length - 1]?.[0]?.transcript?.trim();
-      if (transcript) sendVoiceTranscript(transcript);
-    };
-
-    voiceMessageRecognitionRef.current = recognition;
-    recognition.start();
+      setError("Microphone permission nahi mili.");
+    });
   }
 
   async function handleSaveProfile(event) {
@@ -570,6 +768,33 @@ export function App() {
       }
       setError("Contact add nahi ho paaya.");
     }
+  }
+
+  async function handleCreateGroup(event) {
+    event.preventDefault();
+    if (!user || !authToken || !groupName.trim() || groupMemberIds.length === 0) return;
+
+    try {
+      const result = await createGroup(user.id, {
+        name: groupName.trim(),
+        memberIds: groupMemberIds
+      }, authToken);
+      setGroups((current) => [result.group, ...current.filter((group) => group.id !== result.group.id)]);
+      setSelectedGroup(result.group);
+      setSelectedContact(null);
+      setChatFilter("groups");
+      setGroupName("");
+      setGroupMemberIds([]);
+      setError("Group created.");
+    } catch {
+      setError("Group create nahi ho paaya.");
+    }
+  }
+
+  function toggleGroupMember(contactId) {
+    setGroupMemberIds((current) =>
+      current.includes(contactId) ? current.filter((id) => id !== contactId) : [...current, contactId]
+    );
   }
 
   async function copyInvite() {
@@ -916,7 +1141,7 @@ export function App() {
       <section className="chat-panel">
         <aside className="contact-list">
           <div className="toolbar">
-            <h2>Contacts</h2>
+            <h2>LinguaChat</h2>
             <button className="mini-icon" type="button" title="Enable notifications" onClick={requestNotifications}>
               {notificationsEnabled ? <Bell size={18} /> : <Bell size={18} />}
             </button>
@@ -963,21 +1188,117 @@ export function App() {
           )}
           <div className="search-box">
             <Search size={17} />
-            <input placeholder="Search" />
+            <input
+              placeholder="Search"
+              value={contactSearch}
+              onChange={(event) => setContactSearch(event.target.value)}
+            />
           </div>
-          {contacts.map((contact) => (
+          <div className="chat-tabs" role="tablist" aria-label="Chat filters">
             <button
-              className={`contact-row ${activeContact?.id === contact.id ? "selected" : ""}`}
+              className={chatFilter === "all" ? "active" : ""}
+              type="button"
+              onClick={() => {
+                setChatFilter("all");
+                setSelectedGroup(null);
+              }}
+            >
+              All
+            </button>
+            <button
+              className={chatFilter === "unread" ? "active" : ""}
+              type="button"
+              onClick={() => {
+                setChatFilter("unread");
+                setSelectedGroup(null);
+              }}
+            >
+              Unread
+            </button>
+            <button
+              className={chatFilter === "groups" ? "active" : ""}
+              type="button"
+              onClick={() => {
+                setChatFilter("groups");
+                setSelectedContact(null);
+              }}
+            >
+              Groups
+            </button>
+          </div>
+          {user && chatFilter === "groups" && (
+            <form className="mini-form" onSubmit={handleCreateGroup}>
+              <div className="mini-title">
+                <UsersRound size={15} />
+                <strong>New group</strong>
+              </div>
+              <input
+                placeholder="Group name"
+                value={groupName}
+                onChange={(event) => setGroupName(event.target.value)}
+              />
+              <div className="member-picker">
+                {contacts.map((contact) => (
+                  <label key={contact.id}>
+                    <input
+                      type="checkbox"
+                      checked={groupMemberIds.includes(contact.id)}
+                      onChange={() => toggleGroupMember(contact.id)}
+                    />
+                    <span>{contact.name}</span>
+                  </label>
+                ))}
+              </div>
+              <button className="secondary-button" type="submit" disabled={!groupName.trim() || groupMemberIds.length === 0}>
+                Create group
+              </button>
+            </form>
+          )}
+          {chatFilter === "groups" && filteredContacts.length === 0 && (
+            <div className="empty-list">
+              <UsersRound size={22} />
+              <p>No groups yet.</p>
+            </div>
+          )}
+          {chatFilter !== "groups" && filteredContacts.length === 0 && (
+            <div className="empty-list">
+              <Search size={22} />
+              <p>No matching chats.</p>
+            </div>
+          )}
+          {filteredContacts.map((contact) => (
+            <button
+              className={`contact-row ${activeChat?.id === contact.id ? "selected" : ""}`}
               key={contact.id}
               type="button"
-              onClick={() => setSelectedContact(contact)}
+              onClick={() => {
+                if (contact.type === "group") {
+                  setSelectedGroup(contact);
+                  setSelectedContact(null);
+                } else {
+                  setSelectedContact(contact);
+                  setSelectedGroup(null);
+                }
+              }}
             >
               <span className="avatar">{contact.avatar}</span>
               <span>
                 <strong>{contact.name}</strong>
-                <small>{contact.online ? "Online" : "Offline"} · {languageName[contact.motherTongue]}</small>
+                <small>
+                  {contact.lastMessage
+                    ? contact.lastMessage.senderId === user?.id
+                      ? `You: ${contact.lastMessage.originalText}`
+                      : contact.lastMessage.translatedText
+                    : contact.type === "group"
+                      ? "Group chat"
+                      : `${contact.online ? "Online" : "Offline"} · ${languageName[contact.motherTongue]}`}
+                </small>
               </span>
-              <i className={contact.online ? "online" : ""} />
+              {Number(contact.unreadCount || 0) > 0 ? (
+                <b className="unread-count">{contact.unreadCount}</b>
+              ) : (
+                <i className={contact.online ? "online" : ""} />
+              )}
             </button>
           ))}
         </aside>
@@ -985,13 +1306,15 @@ export function App() {
         <section className="conversation">
           <header className="conversation-header">
             <div>
-              <strong>{activeContact?.name || "Select contact"}</strong>
+              <strong>{activeChat?.name || "Select chat"}</strong>
               <span>
-                {activeContact && typingContactId === activeContact.id
-                  ? `${activeContact.name} is typing...`
-                  : activeContact
-                    ? `${languageName[activeContact.motherTongue]} preferred`
-                    : "No contact selected"}
+                {activeChat && typingContactId === activeChat.id
+                  ? `${activeChat.name} has typing activity...`
+                  : activeChat
+                    ? isGroupChat
+                      ? "Group chat"
+                      : `${languageName[activeChat.motherTongue]} preferred`
+                    : "No chat selected"}
               </span>
             </div>
             <div className="icon-actions">
@@ -1007,13 +1330,13 @@ export function App() {
               >
                 <Volume2 size={18} />
               </button>
-              <button disabled={!user || !activeContact} title="Delete chat for me" type="button" onClick={handleDeleteChat}>
+              <button disabled={!user || !activeContact || isGroupChat} title="Delete chat for me" type="button" onClick={handleDeleteChat}>
                 <Trash2 size={18} />
               </button>
-              <button disabled={!user || !activeContact || call.status !== "idle"} title="Voice call" type="button" onClick={() => startCall("voice")}>
+              <button disabled={!user || !activeContact || isGroupChat || call.status !== "idle"} title="Voice call" type="button" onClick={() => startCall("voice")}>
                 <Phone size={18} />
               </button>
-              <button disabled={!user || !activeContact || call.status !== "idle"} title="Video call" type="button" onClick={() => startCall("video")}>
+              <button disabled={!user || !activeContact || isGroupChat || call.status !== "idle"} title="Video call" type="button" onClick={() => startCall("video")}>
                 <Video size={18} />
               </button>
             </div>
@@ -1035,6 +1358,7 @@ export function App() {
               return (
                 <article className={`message ${mine ? "mine" : "theirs"}`} key={message.id}>
                   <p>{textToShow}</p>
+                  <MessageMedia message={message} />
                   <small>
                     {languageName[message.sourceLanguage] || message.sourceLanguage} to{" "}
                     {languageName[message.targetLanguage] || message.targetLanguage} · {helperText}
@@ -1047,9 +1371,18 @@ export function App() {
           </div>
 
           <form className="composer" onSubmit={sendMessage}>
+            <input ref={fileInputRef} hidden type="file" onChange={handleAttachment} />
+            <button
+              disabled={!user || !activeChat}
+              type="button"
+              title="Attach file"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip size={19} />
+            </button>
             <button
               className={isRecordingVoiceMessage ? "active danger-soft" : ""}
-              disabled={!user || !activeContact}
+              disabled={!user || !activeChat}
               type="button"
               title={isRecordingVoiceMessage ? "Stop voice message" : "Voice message"}
               onClick={toggleVoiceMessageRecording}
@@ -1057,7 +1390,7 @@ export function App() {
               <Mic size={19} />
             </button>
             <input
-              disabled={!user || !activeContact}
+              disabled={!user || !activeChat}
               placeholder={isRecordingVoiceMessage ? "Listening..." : "Type a message..."}
               value={messageText}
               onChange={(event) => updateMessageDraft(event.target.value)}
@@ -1177,5 +1510,24 @@ function WorkflowItem({ icon, label, active }) {
       {icon}
       <span>{label}</span>
     </div>
+  );
+}
+
+function MessageMedia({ message }) {
+  if (!message.mediaUrl) return null;
+  const url = mediaHref(message.mediaUrl);
+
+  if (message.messageType === "image" || message.mediaMime?.startsWith("image/")) {
+    return <img className="message-media" src={url} alt={message.mediaName || "Shared image"} />;
+  }
+
+  if (message.messageType === "audio" || message.mediaMime?.startsWith("audio/")) {
+    return <audio className="message-audio" src={url} controls />;
+  }
+
+  return (
+    <a className="message-file" href={url} target="_blank" rel="noreferrer">
+      {message.mediaName || "Open attachment"}
+    </a>
   );
 }

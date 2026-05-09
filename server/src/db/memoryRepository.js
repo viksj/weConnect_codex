@@ -4,6 +4,10 @@ import { seedUsers } from "./seedUsers.js";
 export function createMemoryRepository() {
   const users = new Map();
   const messages = [];
+  const groups = new Map();
+  const groupMembers = new Map();
+  const groupMessages = [];
+  const groupReads = new Set();
   const contacts = new Map();
   const deletedConversations = new Map();
 
@@ -66,6 +70,25 @@ export function createMemoryRepository() {
       return Array.from(contacts.get(userId) || []).map((contactId) => users.get(contactId)).filter(Boolean);
     },
 
+    async getConversationSummary(userId, contactId) {
+      const conversation = messages
+        .filter((message) => {
+          const sent = message.senderId === userId && message.receiverId === contactId;
+          const received = message.senderId === contactId && message.receiverId === userId;
+          return sent || received;
+        })
+        .sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt));
+      const lastMessage = conversation[conversation.length - 1] || null;
+      const unreadCount = conversation.filter(
+        (message) => message.senderId === contactId && message.receiverId === userId && message.status !== "read"
+      ).length;
+
+      return {
+        unreadCount,
+        lastMessage
+      };
+    },
+
     async addContact(userId, contactId) {
       const userContacts = contacts.get(userId) || new Set();
       userContacts.add(contactId);
@@ -76,6 +99,64 @@ export function createMemoryRepository() {
     async saveMessage(message) {
       messages.push(message);
       return message;
+    },
+
+    async createGroup(payload) {
+      const group = {
+        id: payload.id || uuid(),
+        type: "group",
+        name: payload.name,
+        avatar: payload.name?.charAt(0)?.toUpperCase() || "G",
+        createdBy: payload.createdBy,
+        createdAt: new Date().toISOString()
+      };
+      groups.set(group.id, group);
+      groupMembers.set(group.id, new Set([payload.createdBy, ...(payload.memberIds || [])]));
+      return group;
+    },
+
+    async getGroups(userId) {
+      return Array.from(groups.values()).filter((group) => groupMembers.get(group.id)?.has(userId));
+    },
+
+    async getGroupByIdForUser(groupId, userId) {
+      return groupMembers.get(groupId)?.has(userId) ? groups.get(groupId) || null : null;
+    },
+
+    async getGroupMembers(groupId) {
+      return Array.from(groupMembers.get(groupId) || []).map((userId) => users.get(userId)).filter(Boolean);
+    },
+
+    async getGroupSummary(userId, groupId) {
+      const conversation = groupMessages
+        .filter((message) => message.groupId === groupId)
+        .sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt));
+      const lastMessage = conversation[conversation.length - 1] || null;
+      const unreadCount = conversation.filter(
+        (message) => message.senderId !== userId && !groupReads.has(`${message.id}:${userId}`)
+      ).length;
+      return { unreadCount, lastMessage };
+    },
+
+    async saveGroupMessage(message) {
+      groupMessages.push(message);
+      return message;
+    },
+
+    async getGroupMessages(groupId) {
+      return groupMessages.filter((message) => message.groupId === groupId);
+    },
+
+    async markGroupRead(userId, groupId) {
+      const readAt = new Date().toISOString();
+      const updatedIds = [];
+      groupMessages.forEach((message) => {
+        if (message.groupId === groupId && message.senderId !== userId && !groupReads.has(`${message.id}:${userId}`)) {
+          groupReads.add(`${message.id}:${userId}`);
+          updatedIds.push(message.id);
+        }
+      });
+      return { updatedIds, status: "read", readAt };
     },
 
     async getConversation(userId, contactId) {

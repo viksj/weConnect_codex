@@ -64,11 +64,47 @@ export async function addContact(userId, payload, token) {
   return body;
 }
 
+export async function getGroups(userId, token) {
+  const response = await fetch(`${API_URL}/api/users/${userId}/groups`, {
+    headers: authHeaders(token)
+  });
+  if (!response.ok) throw new Error("Unable to fetch groups");
+  return response.json();
+}
+
+export async function createGroup(userId, payload, token) {
+  const response = await fetch(`${API_URL}/api/users/${userId}/groups`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error("Unable to create group");
+  return response.json();
+}
+
 export async function getConversation(userId, contactId, token) {
   const response = await fetch(`${API_URL}/api/users/${userId}/conversations/${contactId}`, {
     headers: authHeaders(token)
   });
   if (!response.ok) throw new Error("Unable to fetch conversation");
+  return response.json();
+}
+
+export async function getGroupConversation(userId, groupId, token) {
+  const response = await fetch(`${API_URL}/api/users/${userId}/groups/${groupId}/messages`, {
+    headers: authHeaders(token)
+  });
+  if (!response.ok) throw new Error("Unable to fetch group conversation");
+  return response.json();
+}
+
+export async function uploadLocalMedia(userId, payload, token) {
+  const response = await fetch(`${API_URL}/api/users/${userId}/uploads`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error("Unable to upload media");
   return response.json();
 }
 

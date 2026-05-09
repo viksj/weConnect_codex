@@ -156,9 +156,13 @@ weConnect_codex/
 - `PATCH /api/users/:userId` - Update user profile
 - `GET /api/users/:userId/contacts` - Get user contacts
 - `POST /api/users/:userId/contacts` - Add contact
+- `GET /api/users/:userId/groups` - Get group chats
+- `POST /api/users/:userId/groups` - Create a group chat
+- `POST /api/users/:userId/uploads` - Store local media/voice uploads
 
 ### Messages
 - `GET /api/users/:userId/conversations/:contactId` - Get conversation
+- `GET /api/users/:userId/groups/:groupId/messages` - Get group conversation
 - `DELETE /api/users/:userId/conversations/:contactId` - Delete conversation
 
 ### Translation
@@ -175,9 +179,15 @@ Set `TRANSLATION_PROVIDER=openai` for AI translation, or `TRANSLATION_PROVIDER=l
 
 ### Messaging
 - `message:send` - Send message to user
+- `group:message:send` - Send message to group
 - `message:read` - Mark a conversation as read
+- `group:read` - Mark group messages as read
 - `message:status` - Receive delivered/read status updates
 - `typing` - Send and receive typing indicators
+
+## Local Web Scope
+
+For the current local build, MySQL is the primary database. Domain, hosting, NGINX/API gateway, cloud storage, Redis scaling, and mobile app work are intentionally outside this phase. Media and voice messages are saved locally in `server/uploads/`.
 
 ### Calling
 - `call:invite` - Initiate call

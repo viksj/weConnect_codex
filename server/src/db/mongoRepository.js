@@ -27,8 +27,26 @@ function mapMessage(document) {
     translatedText: document.translatedText,
     sourceLanguage: document.sourceLanguage,
     targetLanguage: document.targetLanguage,
+    groupId: document.groupId || null,
+    messageType: document.messageType || "text",
+    mediaUrl: document.mediaUrl || null,
+    mediaName: document.mediaName || null,
+    mediaMime: document.mediaMime || null,
     status: document.status,
     readAt: document.readAt,
+    createdAt: document.createdAt
+  };
+}
+
+function mapGroup(document) {
+  if (!document) return null;
+
+  return {
+    id: document.id,
+    type: "group",
+    name: document.name,
+    avatar: document.avatar,
+    createdBy: document.createdBy,
     createdAt: document.createdAt
   };
 }
@@ -55,6 +73,22 @@ export function createMongoRepository() {
     return database.collection("conversation_deletions");
   }
 
+  function groupsCollection() {
+    return database.collection("groups");
+  }
+
+  function groupMembersCollection() {
+    return database.collection("group_members");
+  }
+
+  function groupMessagesCollection() {
+    return database.collection("group_messages");
+  }
+
+  function groupReadsCollection() {
+    return database.collection("group_message_reads");
+  }
+
   return {
     async init() {
       await client.connect();
@@ -66,6 +100,10 @@ export function createMongoRepository() {
       await messagesCollection().createIndex({ senderId: 1, receiverId: 1, createdAt: 1 });
       await contactsCollection().createIndex({ userId: 1, contactId: 1 }, { unique: true });
       await conversationDeletionsCollection().createIndex({ userId: 1, contactId: 1 }, { unique: true });
+      await groupsCollection().createIndex({ id: 1 }, { unique: true });
+      await groupMembersCollection().createIndex({ groupId: 1, userId: 1 }, { unique: true });
+      await groupMessagesCollection().createIndex({ groupId: 1, createdAt: 1 });
+      await groupReadsCollection().createIndex({ messageId: 1, userId: 1 }, { unique: true });
 
       if (process.env.DB_SEED_DEMO_USERS !== "false" && (await usersCollection().countDocuments()) === 0) {
         await usersCollection().insertMany(seedUsers.map((user) => ({ ...user, createdAt: new Date().toISOString() })));
@@ -134,6 +172,29 @@ export function createMongoRepository() {
       return (await usersCollection().find({ id: { $in: contactIds } }).sort({ name: 1 }).toArray()).map(mapUser);
     },
 
+    async getConversationSummary(userId, contactId) {
+      const lastMessage = await messagesCollection()
+        .find({
+          $or: [
+            { senderId: userId, receiverId: contactId },
+            { senderId: contactId, receiverId: userId }
+          ]
+        })
+        .sort({ createdAt: -1 })
+        .limit(1)
+        .next();
+      const unreadCount = await messagesCollection().countDocuments({
+        senderId: contactId,
+        receiverId: userId,
+        status: { $ne: "read" }
+      });
+
+      return {
+        unreadCount,
+        lastMessage: mapMessage(lastMessage)
+      };
+    },
+
     async addContact(userId, contactId) {
       await contactsCollection().updateOne(
         { userId, contactId },
@@ -146,6 +207,93 @@ export function createMongoRepository() {
     async saveMessage(message) {
       await messagesCollection().insertOne(message);
       return message;
+    },
+
+    async createGroup(payload) {
+      const group = {
+        id: payload.id || uuid(),
+        name: payload.name,
+        avatar: payload.name?.charAt(0)?.toUpperCase() || "G",
+        createdBy: payload.createdBy,
+        createdAt: new Date().toISOString()
+      };
+      const memberIds = Array.from(new Set([payload.createdBy, ...(payload.memberIds || [])]));
+
+      await groupsCollection().insertOne(group);
+      await groupMembersCollection().insertMany(
+        memberIds.map((memberId) => ({
+          groupId: group.id,
+          userId: memberId,
+          role: memberId === payload.createdBy ? "admin" : "member",
+          joinedAt: new Date().toISOString()
+        }))
+      );
+
+      return mapGroup(group);
+    },
+
+    async getGroups(userId) {
+      const memberships = await groupMembersCollection().find({ userId }).toArray();
+      const groupIds = memberships.map((membership) => membership.groupId);
+      if (groupIds.length === 0) return [];
+      return (await groupsCollection().find({ id: { $in: groupIds } }).sort({ createdAt: -1 }).toArray()).map(mapGroup);
+    },
+
+    async getGroupByIdForUser(groupId, userId) {
+      const membership = await groupMembersCollection().findOne({ groupId, userId });
+      if (!membership) return null;
+      return mapGroup(await groupsCollection().findOne({ id: groupId }));
+    },
+
+    async getGroupMembers(groupId) {
+      const memberships = await groupMembersCollection().find({ groupId }).toArray();
+      const userIds = memberships.map((membership) => membership.userId);
+      if (userIds.length === 0) return [];
+      return (await usersCollection().find({ id: { $in: userIds } }).sort({ name: 1 }).toArray()).map(mapUser);
+    },
+
+    async getGroupSummary(userId, groupId) {
+      const lastMessage = await groupMessagesCollection().find({ groupId }).sort({ createdAt: -1 }).limit(1).next();
+      const readMessageIds = (
+        await groupReadsCollection().find({ groupId, userId }).project({ messageId: 1 }).toArray()
+      ).map((read) => read.messageId);
+      const unreadCount = await groupMessagesCollection().countDocuments({
+        groupId,
+        senderId: { $ne: userId },
+        id: { $nin: readMessageIds }
+      });
+      return { unreadCount, lastMessage: mapMessage(lastMessage) };
+    },
+
+    async saveGroupMessage(message) {
+      await groupMessagesCollection().insertOne(message);
+      return message;
+    },
+
+    async getGroupMessages(groupId) {
+      return (await groupMessagesCollection().find({ groupId }).sort({ createdAt: 1 }).toArray()).map(mapMessage);
+    },
+
+    async markGroupRead(userId, groupId) {
+      const readAt = new Date().toISOString();
+      const unreadMessages = await groupMessagesCollection()
+        .find({ groupId, senderId: { $ne: userId } })
+        .project({ id: 1 })
+        .toArray();
+      const updatedIds = [];
+
+      await Promise.all(
+        unreadMessages.map(async (message) => {
+          const result = await groupReadsCollection().updateOne(
+            { messageId: message.id, userId },
+            { $setOnInsert: { groupId, messageId: message.id, userId, readAt } },
+            { upsert: true }
+          );
+          if (result.upsertedCount > 0) updatedIds.push(message.id);
+        })
+      );
+
+      return { updatedIds, status: "read", readAt };
     },
 
     async getConversation(userId, contactId) {
