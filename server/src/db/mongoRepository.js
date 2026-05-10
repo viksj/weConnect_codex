@@ -303,12 +303,37 @@ export function createMongoRepository() {
     },
 
     async saveGroupMessage(message) {
-      await groupMessagesCollection().insertOne(message);
-      return message;
+      const storedMessage = {
+        ...message,
+        reactions: message.reactions || []
+      };
+      await groupMessagesCollection().insertOne(storedMessage);
+      return storedMessage;
     },
 
     async getGroupMessages(groupId) {
       return (await groupMessagesCollection().find({ groupId }).sort({ createdAt: 1 }).toArray()).map(mapMessage);
+    },
+
+    async getGroupMessageById(messageId) {
+      return mapMessage(await groupMessagesCollection().findOne({ id: messageId }));
+    },
+
+    async updateGroupMessageReaction(messageId, userId, emoji) {
+      const message = await this.getGroupMessageById(messageId);
+      if (!message) return null;
+
+      const reactions = (message.reactions || []).filter((reaction) => reaction.userId !== userId);
+      if (emoji) {
+        reactions.push({
+          userId,
+          emoji,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      await groupMessagesCollection().updateOne({ id: messageId }, { $set: { reactions } });
+      return { ...message, reactions };
     },
 
     async markGroupRead(userId, groupId) {

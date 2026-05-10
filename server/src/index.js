@@ -151,12 +151,16 @@ async function withConversationSummary(userId, contact) {
 async function formatGroupMessageForUser(message, user) {
   const originalText = decryptMessage(message.originalText);
   const translatedText = await translateText(originalText, message.sourceLanguage, user.motherTongue);
+  const replyPreviewText = message.replyPreviewText
+    ? await translateText(decryptMessage(message.replyPreviewText), message.sourceLanguage, user.motherTongue)
+    : "";
 
   return {
     ...message,
     receiverId: user.id,
     originalText: encryptMessage(originalText),
     translatedText: encryptMessage(translatedText),
+    replyPreviewText: replyPreviewText ? encryptMessage(replyPreviewText) : null,
     targetLanguage: user.motherTongue,
     status: "delivered"
   };
@@ -542,7 +546,16 @@ io.on("connection", (socket) => {
     io.to(updatedMessage.receiverId).emit("message:reaction", payload);
   });
 
-  socket.on("group:message:send", async ({ groupId, text, messageType = "text", mediaUrl, mediaName, mediaMime }) => {
+  socket.on("group:message:send", async ({
+    groupId,
+    text,
+    messageType = "text",
+    mediaUrl,
+    mediaName,
+    mediaMime,
+    replyToMessageId,
+    replyPreviewText
+  }) => {
     const sender = socket.data.user;
     if (!sender || !groupId || (!text?.trim() && !mediaUrl)) return;
 
@@ -561,6 +574,9 @@ io.on("connection", (socket) => {
       mediaUrl,
       mediaName,
       mediaMime,
+      replyToMessageId: replyToMessageId || null,
+      replyPreviewText: replyPreviewText ? encryptMessage(decryptMessage(replyPreviewText).trim()) : null,
+      reactions: [],
       createdAt: new Date().toISOString()
     });
     const members = await database.getGroupMembers(groupId);
@@ -572,6 +588,29 @@ io.on("connection", (socket) => {
       })
     );
     members.forEach((member) => io.to(member.id).emit("groups:update"));
+  });
+
+  socket.on("group:message:react", async ({ groupId, messageId, emoji }) => {
+    const user = socket.data.user;
+    if (!user || !groupId || !messageId) return;
+
+    const group = await database.getGroupByIdForUser(groupId, user.id);
+    if (!group) return;
+
+    const message = await database.getGroupMessageById?.(messageId);
+    if (!message || message.groupId !== groupId) return;
+
+    const cleanEmoji = typeof emoji === "string" && emoji.trim() ? emoji.trim().slice(0, 8) : "";
+    const updatedMessage = await database.updateGroupMessageReaction?.(messageId, user.id, cleanEmoji);
+    if (!updatedMessage) return;
+
+    const members = await database.getGroupMembers(groupId);
+    const payload = {
+      groupId,
+      messageId,
+      reactions: updatedMessage.reactions || []
+    };
+    members.forEach((member) => io.to(member.id).emit("message:reaction", payload));
   });
 
   socket.on("message:read", async ({ contactId }) => {

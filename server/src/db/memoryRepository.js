@@ -165,12 +165,36 @@ export function createMemoryRepository() {
     },
 
     async saveGroupMessage(message) {
-      groupMessages.push(message);
-      return message;
+      const storedMessage = {
+        ...message,
+        reactions: message.reactions || []
+      };
+      groupMessages.push(storedMessage);
+      return storedMessage;
     },
 
     async getGroupMessages(groupId) {
       return groupMessages.filter((message) => message.groupId === groupId);
+    },
+
+    async getGroupMessageById(messageId) {
+      return groupMessages.find((message) => message.id === messageId) || null;
+    },
+
+    async updateGroupMessageReaction(messageId, userId, emoji) {
+      const message = groupMessages.find((item) => item.id === messageId);
+      if (!message) return null;
+
+      const reactions = (message.reactions || []).filter((reaction) => reaction.userId !== userId);
+      if (emoji) {
+        reactions.push({
+          userId,
+          emoji,
+          createdAt: new Date().toISOString()
+        });
+      }
+      message.reactions = reactions;
+      return message;
     },
 
     async markGroupRead(userId, groupId) {

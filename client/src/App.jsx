@@ -571,7 +571,6 @@ export function App() {
   }
 
   function beginReply(message) {
-    if (isGroupChat) return;
     setReplyingTo({
       id: message.id,
       text: messageTextForUser(message)
@@ -579,9 +578,10 @@ export function App() {
   }
 
   function reactToMessage(message, emoji) {
-    if (isGroupChat || !socketRef.current) return;
+    if (!socketRef.current) return;
     const existingReaction = (message.reactions || []).find((reaction) => reaction.userId === user?.id);
-    socketRef.current.emit("message:react", {
+    socketRef.current.emit(isGroupChat ? "group:message:react" : "message:react", {
+      groupId: isGroupChat ? activeChat.id : undefined,
       messageId: message.id,
       emoji: existingReaction?.emoji === emoji ? "" : emoji
     });
@@ -764,8 +764,8 @@ export function App() {
       receiverId: isGroupChat ? undefined : activeChat.id,
       groupId: isGroupChat ? activeChat.id : undefined,
       text: encryptMessage(messageText),
-      replyToMessageId: !isGroupChat ? replyingTo?.id : undefined,
-      replyPreviewText: !isGroupChat && replyingTo?.text ? encryptMessage(replyingTo.text) : undefined
+      replyToMessageId: replyingTo?.id,
+      replyPreviewText: replyingTo?.text ? encryptMessage(replyingTo.text) : undefined
     });
     setMessageText("");
     setReplyingTo(null);
@@ -808,8 +808,8 @@ export function App() {
         mediaUrl: upload.url,
         mediaName: upload.name,
         mediaMime: upload.mimeType,
-        replyToMessageId: !isGroupChat ? replyingTo?.id : undefined,
-        replyPreviewText: !isGroupChat && replyingTo?.text ? encryptMessage(replyingTo.text) : undefined
+        replyToMessageId: replyingTo?.id,
+        replyPreviewText: replyingTo?.text ? encryptMessage(replyingTo.text) : undefined
       });
       setReplyingTo(null);
     } catch (caughtError) {
@@ -1612,24 +1612,22 @@ export function App() {
                   )}
                   <p className="message-main">{textToShow}</p>
                   <MessageMedia message={message} />
-                  {!isGroupChat && (
-                    <div className="message-actions" aria-label="Message actions">
-                      <button type="button" title="Reply" onClick={() => beginReply(message)}>
-                        <Reply size={14} />
+                  <div className="message-actions" aria-label="Message actions">
+                    <button type="button" title="Reply" onClick={() => beginReply(message)}>
+                      <Reply size={14} />
+                    </button>
+                    {["👍", "❤️", "😂"].map((emoji) => (
+                      <button
+                        className={myReaction?.emoji === emoji ? "selected" : ""}
+                        key={emoji}
+                        type="button"
+                        title={`React ${emoji}`}
+                        onClick={() => reactToMessage(message, emoji)}
+                      >
+                        {emoji}
                       </button>
-                      {["👍", "❤️", "😂"].map((emoji) => (
-                        <button
-                          className={myReaction?.emoji === emoji ? "selected" : ""}
-                          key={emoji}
-                          type="button"
-                          title={`React ${emoji}`}
-                          onClick={() => reactToMessage(message, emoji)}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    ))}
+                  </div>
                   {message.reactions?.length > 0 && (
                     <div className="reaction-strip">
                       {message.reactions.map((reaction) => (

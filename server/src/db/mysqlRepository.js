@@ -210,6 +210,16 @@ export function createMySqlRepository() {
         CONSTRAINT fk_group_reads_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    await pool.query("ALTER TABLE group_messages ADD COLUMN reply_to_message_id VARCHAR(64) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE group_messages ADD COLUMN reply_preview_text TEXT NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE group_messages ADD COLUMN reactions_json TEXT NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
   }
 
   async function seedDemoUsers() {
@@ -536,20 +546,23 @@ export function createMySqlRepository() {
 
       await pool.query(
         `INSERT INTO group_messages
-          (id, group_id, sender_id, original_text, source_language, message_type, media_url, media_name, media_mime, created_at)
+          (id, group_id, sender_id, original_text, source_language, message_type, media_url, media_name, media_mime, reply_to_message_id, reply_preview_text, reactions_json, created_at)
          VALUES
-          (:id, :groupId, :senderId, :originalText, :sourceLanguage, :messageType, :mediaUrl, :mediaName, :mediaMime, :createdAt)`,
+          (:id, :groupId, :senderId, :originalText, :sourceLanguage, :messageType, :mediaUrl, :mediaName, :mediaMime, :replyToMessageId, :replyPreviewText, :reactionsJson, :createdAt)`,
         {
           ...message,
           messageType: message.messageType || "text",
           mediaUrl: message.mediaUrl || null,
           mediaName: message.mediaName || null,
           mediaMime: message.mediaMime || null,
+          replyToMessageId: message.replyToMessageId || null,
+          replyPreviewText: message.replyPreviewText || null,
+          reactionsJson: JSON.stringify(message.reactions || []),
           createdAt: formattedCreatedAt
         }
       );
 
-      return { ...message, createdAt: formattedCreatedAt };
+      return { ...message, reactions: message.reactions || [], createdAt: formattedCreatedAt };
     },
 
     async getGroupMessages(groupId, userId) {
@@ -564,6 +577,37 @@ export function createMySqlRepository() {
         { groupId, userId }
       );
       return rows.map(mapMessage);
+    },
+
+    async getGroupMessageById(messageId) {
+      const [rows] = await pool.query(
+        `SELECT group_messages.*, NULL AS receiver_id, group_messages.group_id, 'delivered' AS status, NULL AS read_at
+         FROM group_messages
+         WHERE id = :messageId
+         LIMIT 1`,
+        { messageId }
+      );
+      return mapMessage(rows[0]);
+    },
+
+    async updateGroupMessageReaction(messageId, userId, emoji) {
+      const message = await this.getGroupMessageById(messageId);
+      if (!message) return null;
+
+      const reactions = (message.reactions || []).filter((reaction) => reaction.userId !== userId);
+      if (emoji) {
+        reactions.push({
+          userId,
+          emoji,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      await pool.query(
+        "UPDATE group_messages SET reactions_json = :reactionsJson WHERE id = :messageId",
+        { messageId, reactionsJson: JSON.stringify(reactions) }
+      );
+      return { ...message, reactions };
     },
 
     async markGroupRead(userId, groupId) {
