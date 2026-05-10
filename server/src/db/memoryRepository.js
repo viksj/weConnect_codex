@@ -32,7 +32,7 @@ export function createMemoryRepository() {
         firebaseUid: payload.firebaseUid || existingUser?.firebaseUid || null,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
-        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "native",
+        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "auto",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 
@@ -53,7 +53,7 @@ export function createMemoryRepository() {
         name: payload.name,
         motherTongue: payload.motherTongue || existingUser.motherTongue,
         understands: payload.understands || payload.motherTongue || existingUser.understands,
-        scriptPreference: payload.scriptPreference || existingUser.scriptPreference || "native",
+        scriptPreference: payload.scriptPreference || existingUser.scriptPreference || "auto",
         avatar: payload.name?.charAt(0)?.toUpperCase() || existingUser.avatar
       };
       users.set(userId, user);
@@ -137,6 +137,7 @@ export function createMemoryRepository() {
         originalText: payload.originalText,
         translatedText: payload.translatedText,
         sourceLanguage: payload.sourceLanguage,
+        sourceScript: payload.sourceScript,
         targetLanguage: payload.targetLanguage,
         editedAt: payload.editedAt
       });
@@ -220,6 +221,7 @@ export function createMemoryRepository() {
       Object.assign(message, {
         originalText: payload.originalText,
         sourceLanguage: payload.sourceLanguage,
+        sourceScript: payload.sourceScript,
         editedAt: payload.editedAt
       });
       return message;

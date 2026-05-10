@@ -52,7 +52,7 @@ const demoUser = {
   name: "You",
   emailOrPhone: "+91 90000 00000",
   motherTongue: "hi",
-  scriptPreference: "native"
+  scriptPreference: "auto"
 };
 const webSessionKey = "weconnect:web-session";
 
@@ -1449,6 +1449,7 @@ export function App() {
                     value={form.scriptPreference || "native"}
                     onChange={(event) => setForm({ ...form, scriptPreference: event.target.value })}
                   >
+                    <option value="auto">Auto from typing</option>
                     <option value="native">Hindi script</option>
                     <option value="roman">Roman Hindi</option>
                   </select>
@@ -1495,6 +1496,7 @@ export function App() {
                     value={profileForm.scriptPreference || "native"}
                     onChange={(event) => setProfileForm({ ...profileForm, scriptPreference: event.target.value })}
                   >
+                    <option value="auto">Auto from typing</option>
                     <option value="native">Hindi script</option>
                     <option value="roman">Roman Hindi</option>
                   </select>

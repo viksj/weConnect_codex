@@ -12,7 +12,7 @@ function mapUser(document) {
     firebaseUid: document.firebaseUid || null,
     motherTongue: document.motherTongue,
     understands: document.understands,
-    scriptPreference: document.scriptPreference || "native",
+    scriptPreference: document.scriptPreference || "auto",
     avatar: document.avatar
   };
 }
@@ -27,6 +27,7 @@ function mapMessage(document) {
     originalText: document.originalText,
     translatedText: document.translatedText,
     sourceLanguage: document.sourceLanguage,
+    sourceScript: document.sourceScript || "native",
     targetLanguage: document.targetLanguage,
     groupId: document.groupId || null,
     messageType: document.messageType || "text",
@@ -124,7 +125,7 @@ export function createMongoRepository() {
         firebaseUid: payload.firebaseUid || existingUser?.firebaseUid || null,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
-        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "native",
+        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "auto",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U",
         updatedAt: new Date().toISOString()
       };
@@ -156,7 +157,7 @@ export function createMongoRepository() {
         name: payload.name,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
-        scriptPreference: payload.scriptPreference || "native",
+        scriptPreference: payload.scriptPreference || "auto",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U",
         updatedAt: new Date().toISOString()
       };
@@ -255,6 +256,7 @@ export function createMongoRepository() {
         originalText: payload.originalText,
         translatedText: payload.translatedText,
         sourceLanguage: payload.sourceLanguage,
+        sourceScript: payload.sourceScript,
         targetLanguage: payload.targetLanguage,
         editedAt: payload.editedAt
       };
@@ -356,6 +358,7 @@ export function createMongoRepository() {
       const updates = {
         originalText: payload.originalText,
         sourceLanguage: payload.sourceLanguage,
+        sourceScript: payload.sourceScript,
         editedAt: payload.editedAt
       };
       await groupMessagesCollection().updateOne({ id: messageId }, { $set: updates });

@@ -373,7 +373,7 @@ async function run() {
         name: "Alice Local",
         emailOrPhone: alicePhone,
         motherTongue: "hi",
-        scriptPreference: "roman"
+        scriptPreference: "auto"
       },
       aliceToken
     );
@@ -386,7 +386,7 @@ async function run() {
       },
       bobToken
     );
-    assert(alice.scriptPreference === "roman", `Expected Alice Roman Hindi preference, got ${alice.scriptPreference}`);
+    assert(alice.scriptPreference === "auto", `Expected Alice auto Hindi preference, got ${alice.scriptPreference}`);
 
     await post(`/api/users/${alice.id}/contacts`, { emailOrPhone: bobPhone }, aliceToken);
     const { contacts } = await get(`/api/users/${alice.id}/contacts`, aliceToken);
@@ -443,6 +443,17 @@ async function run() {
       decryptMessage(firstReplyFromBob.replyPreviewText) === "namaste",
       "Direct reply preview was not translated for the receiver"
     );
+    const nativeScriptMessage = await sendAndAssertMessage({
+      senderSocket: bobSocket,
+      receiverSocket: aliceSocket,
+      sender: bob,
+      receiver: alice,
+      text: "नमस्ते",
+      expectedTranslation: "नमस्ते",
+      expectedSourceLanguage: "hi",
+      expectedTargetLanguage: "hi"
+    });
+    assert(nativeScriptMessage.sourceScript === "native", "Native Hindi script was not detected");
     const secondMessage = await sendAndAssertMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
@@ -464,7 +475,7 @@ async function run() {
     });
 
     const { messages } = await get(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
-    assert(messages.length === 4, `Expected four stored conversation messages, got ${messages.length}`);
+    assert(messages.length === 5, `Expected five stored conversation messages, got ${messages.length}`);
     const storedFirstMessage = messages.find((message) => message.id === firstMessage.id);
     const storedSecondMessage = messages.find((message) => message.id === secondMessage.id);
     const storedVoiceMessage = messages.find((message) => message.id === voiceMessage.id);
@@ -579,7 +590,7 @@ async function run() {
     assert(!aliceContactAfterDelete.lastMessage, "Deleted conversation still shows a last message preview");
     assert(Number(aliceContactAfterDelete.unreadCount || 0) === 0, "Deleted conversation still shows unread messages");
     const { messages: aliceMessagesAfterBobDelete } = await get(`/api/users/${alice.id}/conversations/${bob.id}`, aliceToken);
-    assert(aliceMessagesAfterBobDelete.length === 4, "Delete-for-me removed messages for the other user");
+    assert(aliceMessagesAfterBobDelete.length === 5, "Delete-for-me removed messages for the other user");
 
     console.log("Local flow test passed: demo OTP, registration, contacts, Socket.IO messaging, and translation.");
   } finally {
