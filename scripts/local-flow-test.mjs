@@ -154,11 +154,22 @@ function waitForEvent(socket, eventName) {
   });
 }
 
-async function sendAndAssertMessage({ senderSocket, receiverSocket, sender, receiver, text, expectedTranslation }) {
+async function sendAndAssertMessage({
+  senderSocket,
+  receiverSocket,
+  sender,
+  receiver,
+  text,
+  expectedTranslation,
+  replyToMessageId,
+  replyPreviewText
+}) {
   const incomingMessage = waitForMessage(receiverSocket);
   senderSocket.emit("message:send", {
     receiverId: receiver.id,
-    text: encryptMessage(text)
+    text: encryptMessage(text),
+    replyToMessageId,
+    replyPreviewText: replyPreviewText ? encryptMessage(replyPreviewText) : undefined
   });
 
   const message = await incomingMessage;
@@ -171,8 +182,23 @@ async function sendAndAssertMessage({ senderSocket, receiverSocket, sender, rece
     decryptMessage(message.translatedText) === expectedTranslation,
     `Expected translation "${expectedTranslation}", got "${decryptMessage(message.translatedText)}"`
   );
+  if (replyToMessageId) {
+    assert(message.replyToMessageId === replyToMessageId, "Reply message id did not round-trip");
+    assert(decryptMessage(message.replyPreviewText) === replyPreviewText, "Reply preview text did not round-trip");
+  }
 
   return message;
+}
+
+async function reactAndAssertMessage({ reactorSocket, receiverSocket, reactor, messageId, emoji }) {
+  const incomingReaction = waitForEvent(receiverSocket, "message:reaction");
+  reactorSocket.emit("message:react", { messageId, emoji });
+
+  const reactionUpdate = await incomingReaction;
+  const reaction = reactionUpdate.reactions.find((item) => item.userId === reactor.id);
+  assert(reactionUpdate.messageId === messageId, "Reaction update message id did not match");
+  assert(reaction?.emoji === emoji, `Expected reaction ${emoji}, got ${reaction?.emoji || "none"}`);
+  return reactionUpdate;
 }
 
 async function sendAndAssertVoiceMessage({ senderSocket, receiverSocket, sender, receiver, transcript, expectedTranslation }) {
@@ -208,7 +234,7 @@ function startServer() {
       ...process.env,
       NODE_ENV: "development",
       PORT: String(port),
-      DB_PROVIDER: "memory",
+      DB_PROVIDER: process.env.TEST_DB_PROVIDER || "memory",
       ENABLE_DEMO_OTP: "true",
       TRANSLATION_PROVIDER: "local",
       FIREBASE_SERVICE_ACCOUNT_PATH: "",
@@ -231,8 +257,9 @@ async function run() {
   try {
     await waitForServer();
 
-    const alicePhone = "+919000000101";
-    const bobPhone = "+919000000102";
+    const phoneSeed = String(Date.now()).slice(-6);
+    const alicePhone = `+9190${phoneSeed}01`;
+    const bobPhone = `+9190${phoneSeed}02`;
     const aliceToken = await verifyDemoUser(alicePhone);
     const bobToken = await verifyDemoUser(bobPhone);
 
@@ -270,7 +297,7 @@ async function run() {
     aliceSocket = await connectSocket(alice, aliceToken);
     bobSocket = await connectSocket(bob, bobToken);
 
-    await sendAndAssertMessage({
+    const firstMessage = await sendAndAssertMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
       sender: alice,
@@ -278,15 +305,24 @@ async function run() {
       text: "Kaise ho?",
       expectedTranslation: "How are you?"
     });
-    await sendAndAssertMessage({
+    await reactAndAssertMessage({
+      reactorSocket: bobSocket,
+      receiverSocket: aliceSocket,
+      reactor: bob,
+      messageId: firstMessage.id,
+      emoji: "👍"
+    });
+    const secondMessage = await sendAndAssertMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
       sender: alice,
       receiver: bob,
       text: "kya kar rhe ho",
-      expectedTranslation: "What are you doing?"
+      expectedTranslation: "What are you doing?",
+      replyToMessageId: firstMessage.id,
+      replyPreviewText: "Kaise ho?"
     });
-    await sendAndAssertVoiceMessage({
+    const voiceMessage = await sendAndAssertVoiceMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
       sender: alice,
@@ -297,15 +333,24 @@ async function run() {
 
     const { messages } = await get(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
     assert(messages.length === 3, `Expected three stored conversation messages, got ${messages.length}`);
-    assert(decryptMessage(messages[0].translatedText) === "How are you?", "Stored translation was not English");
+    const storedFirstMessage = messages.find((message) => message.id === firstMessage.id);
+    const storedSecondMessage = messages.find((message) => message.id === secondMessage.id);
+    const storedVoiceMessage = messages.find((message) => message.id === voiceMessage.id);
+    assert(storedFirstMessage, "First stored message was not returned");
+    assert(storedSecondMessage, "Second stored message was not returned");
+    assert(storedVoiceMessage, "Stored voice message was not returned");
+    assert(decryptMessage(storedFirstMessage.translatedText) === "How are you?", "Stored translation was not English");
+    assert(storedFirstMessage.reactions.some((reaction) => reaction.userId === bob.id && reaction.emoji === "👍"), "Stored reaction was not returned");
+    assert(storedSecondMessage.replyToMessageId === firstMessage.id, "Stored reply target was not returned");
+    assert(decryptMessage(storedSecondMessage.replyPreviewText) === "Kaise ho?", "Stored reply preview was not returned");
     assert(
-      decryptMessage(messages[1].translatedText) === "What are you doing?",
+      decryptMessage(storedSecondMessage.translatedText) === "What are you doing?",
       "Stored Roman Hindi variant translation was not English"
     );
-    assert(messages[2].messageType === "audio", "Stored voice message type was not audio");
-    assert(messages[2].mediaUrl === "/uploads/test-voice-message.webm", "Stored original voice audio URL was not preserved");
+    assert(storedVoiceMessage.messageType === "audio", "Stored voice message type was not audio");
+    assert(storedVoiceMessage.mediaUrl === "/uploads/test-voice-message.webm", "Stored original voice audio URL was not preserved");
     assert(
-      decryptMessage(messages[2].translatedText) === "What are you doing?",
+      decryptMessage(storedVoiceMessage.translatedText) === "What are you doing?",
       "Stored voice transcript translation was not English"
     );
 

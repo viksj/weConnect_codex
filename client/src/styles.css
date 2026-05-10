@@ -637,6 +637,27 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.reply-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--blue);
+  padding: 6px 8px;
+  background: rgba(37, 99, 235, 0.08);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.reply-preview span,
+.composer-reply span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message-status {
   display: block;
   margin-top: 6px;
@@ -680,14 +701,74 @@ select:focus {
   background: #fff;
 }
 
+.message-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.message-actions button,
+.composer-reply button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.message-actions button.selected {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.reaction-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.reaction-strip span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 0.9rem;
+}
+
 .composer {
   gap: 10px;
   padding: 14px;
   border-top: 1px solid var(--line);
+  flex-wrap: wrap;
 }
 
 .composer input {
   flex: 1;
+}
+
+.composer-reply {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  background: #eff6ff;
+  color: var(--muted);
+  padding: 8px 10px;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.composer-reply button {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .send-button {

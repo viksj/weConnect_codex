@@ -99,7 +99,31 @@ export function createMemoryRepository() {
     },
 
     async saveMessage(message) {
-      messages.push(message);
+      const storedMessage = {
+        ...message,
+        reactions: message.reactions || []
+      };
+      messages.push(storedMessage);
+      return storedMessage;
+    },
+
+    async getMessageById(messageId) {
+      return messages.find((message) => message.id === messageId) || null;
+    },
+
+    async updateMessageReaction(messageId, userId, emoji) {
+      const message = messages.find((item) => item.id === messageId);
+      if (!message) return null;
+
+      const reactions = (message.reactions || []).filter((reaction) => reaction.userId !== userId);
+      if (emoji) {
+        reactions.push({
+          userId,
+          emoji,
+          createdAt: new Date().toISOString()
+        });
+      }
+      message.reactions = reactions;
       return message;
     },
 

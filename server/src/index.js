@@ -477,7 +477,16 @@ io.on("connection", (socket) => {
     await broadcastContacts();
   });
 
-  socket.on("message:send", async ({ receiverId, text, messageType = "text", mediaUrl, mediaName, mediaMime }) => {
+  socket.on("message:send", async ({
+    receiverId,
+    text,
+    messageType = "text",
+    mediaUrl,
+    mediaName,
+    mediaMime,
+    replyToMessageId,
+    replyPreviewText
+  }) => {
     const sender = socket.data.user;
     const receiver = await database.getUserById(receiverId);
 
@@ -502,12 +511,35 @@ io.on("connection", (socket) => {
       mediaUrl,
       mediaName,
       mediaMime,
+      replyToMessageId: replyToMessageId || null,
+      replyPreviewText: replyPreviewText ? encryptMessage(decryptMessage(replyPreviewText).trim()) : null,
+      reactions: [],
       createdAt: new Date().toISOString(),
       status: "delivered"
     });
 
     io.to(sender.id).emit("message:new", message);
     io.to(receiverId).emit("message:new", message);
+  });
+
+  socket.on("message:react", async ({ messageId, emoji }) => {
+    const user = socket.data.user;
+    if (!user || !messageId) return;
+
+    const message = await database.getMessageById?.(messageId);
+    const isParticipant = message && (message.senderId === user.id || message.receiverId === user.id);
+    if (!isParticipant) return;
+
+    const cleanEmoji = typeof emoji === "string" && emoji.trim() ? emoji.trim().slice(0, 8) : "";
+    const updatedMessage = await database.updateMessageReaction?.(messageId, user.id, cleanEmoji);
+    if (!updatedMessage) return;
+
+    const payload = {
+      messageId,
+      reactions: updatedMessage.reactions || []
+    };
+    io.to(updatedMessage.senderId).emit("message:reaction", payload);
+    io.to(updatedMessage.receiverId).emit("message:reaction", payload);
   });
 
   socket.on("group:message:send", async ({ groupId, text, messageType = "text", mediaUrl, mediaName, mediaMime }) => {

@@ -32,6 +32,9 @@ function mapMessage(document) {
     mediaUrl: document.mediaUrl || null,
     mediaName: document.mediaName || null,
     mediaMime: document.mediaMime || null,
+    replyToMessageId: document.replyToMessageId || null,
+    replyPreviewText: document.replyPreviewText || null,
+    reactions: document.reactions || [],
     status: document.status,
     readAt: document.readAt,
     createdAt: document.createdAt
@@ -214,8 +217,33 @@ export function createMongoRepository() {
     },
 
     async saveMessage(message) {
-      await messagesCollection().insertOne(message);
-      return message;
+      const storedMessage = {
+        ...message,
+        reactions: message.reactions || []
+      };
+      await messagesCollection().insertOne(storedMessage);
+      return storedMessage;
+    },
+
+    async getMessageById(messageId) {
+      return mapMessage(await messagesCollection().findOne({ id: messageId }));
+    },
+
+    async updateMessageReaction(messageId, userId, emoji) {
+      const message = await this.getMessageById(messageId);
+      if (!message) return null;
+
+      const reactions = (message.reactions || []).filter((reaction) => reaction.userId !== userId);
+      if (emoji) {
+        reactions.push({
+          userId,
+          emoji,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      await messagesCollection().updateOne({ id: messageId }, { $set: { reactions } });
+      return { ...message, reactions };
     },
 
     async createGroup(payload) {

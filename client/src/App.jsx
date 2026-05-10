@@ -9,6 +9,7 @@ import {
   Phone,
   PhoneOff,
   Plus,
+  Reply,
   Search,
   Send,
   Settings,
@@ -18,7 +19,8 @@ import {
   UserRound,
   Video,
   VideoOff,
-  Volume2
+  Volume2,
+  X
 } from "lucide-react";
 import React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -180,6 +182,7 @@ export function App() {
   const [isRecordingVoiceMessage, setIsRecordingVoiceMessage] = useState(false);
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
+  const [replyingTo, setReplyingTo] = useState(null);
   const [call, setCall] = useState({
     status: "idle",
     type: "voice",
@@ -312,7 +315,8 @@ export function App() {
       const decryptedMessage = {
         ...message,
         originalText: decryptMaybe(message.originalText),
-        translatedText: decryptMaybe(message.translatedText)
+        translatedText: decryptMaybe(message.translatedText),
+        replyPreviewText: decryptMaybe(message.replyPreviewText)
       };
 
       setMessages((current) => {
@@ -399,6 +403,12 @@ export function App() {
           )
         );
       }
+    });
+
+    socket.on("message:reaction", ({ messageId, reactions }) => {
+      setMessages((current) =>
+        current.map((message) => (message.id === messageId ? { ...message, reactions: reactions || [] } : message))
+      );
     });
 
     socket.on("typing", ({ senderId, groupId, isTyping }) => {
@@ -519,6 +529,7 @@ export function App() {
 
   useEffect(() => {
     if (!user || !activeChat || !authToken) return;
+    setReplyingTo(null);
 
     const loadConversation = isGroupChat
       ? getGroupConversation(user.id, activeChat.id, authToken)
@@ -530,7 +541,8 @@ export function App() {
         const decryptedMessages = items.map(message => ({
           ...message,
           originalText: decryptMaybe(message.originalText),
-          translatedText: decryptMaybe(message.translatedText)
+          translatedText: decryptMaybe(message.translatedText),
+          replyPreviewText: decryptMaybe(message.replyPreviewText)
         }));
         setMessages(decryptedMessages);
       })
@@ -552,6 +564,28 @@ export function App() {
       return sent || received;
     });
   }, [messages, user, activeChat, isGroupChat]);
+
+  function messageTextForUser(message) {
+    if (!message) return "";
+    return message.senderId === user?.id ? message.originalText : message.translatedText || message.originalText;
+  }
+
+  function beginReply(message) {
+    if (isGroupChat) return;
+    setReplyingTo({
+      id: message.id,
+      text: messageTextForUser(message)
+    });
+  }
+
+  function reactToMessage(message, emoji) {
+    if (isGroupChat || !socketRef.current) return;
+    const existingReaction = (message.reactions || []).find((reaction) => reaction.userId === user?.id);
+    socketRef.current.emit("message:react", {
+      messageId: message.id,
+      emoji: existingReaction?.emoji === emoji ? "" : emoji
+    });
+  }
 
   useEffect(() => {
     if (!user || !activeChat || !socketRef.current) return;
@@ -709,6 +743,7 @@ export function App() {
     setSelectedGroup(null);
     setMessages([]);
     setMessageText("");
+    setReplyingTo(null);
     setOtp("");
     setConfirmationResult(null);
     setProfileForm(demoUser);
@@ -728,9 +763,12 @@ export function App() {
     socketRef.current?.emit(isGroupChat ? "group:message:send" : "message:send", {
       receiverId: isGroupChat ? undefined : activeChat.id,
       groupId: isGroupChat ? activeChat.id : undefined,
-      text: encryptMessage(messageText)
+      text: encryptMessage(messageText),
+      replyToMessageId: !isGroupChat ? replyingTo?.id : undefined,
+      replyPreviewText: !isGroupChat && replyingTo?.text ? encryptMessage(replyingTo.text) : undefined
     });
     setMessageText("");
+    setReplyingTo(null);
   }
 
   function updateMessageDraft(value) {
@@ -769,8 +807,11 @@ export function App() {
         messageType,
         mediaUrl: upload.url,
         mediaName: upload.name,
-        mediaMime: upload.mimeType
+        mediaMime: upload.mimeType,
+        replyToMessageId: !isGroupChat ? replyingTo?.id : undefined,
+        replyPreviewText: !isGroupChat && replyingTo?.text ? encryptMessage(replyingTo.text) : undefined
       });
+      setReplyingTo(null);
     } catch (caughtError) {
       console.error("Media upload failed:", caughtError);
       setError("Media upload nahi ho paaya.");
@@ -1558,12 +1599,44 @@ export function App() {
 
             {visibleMessages.map((message) => {
               const mine = message.senderId === user?.id;
-              const textToShow = mine ? message.originalText : message.translatedText;
+              const textToShow = messageTextForUser(message);
+              const myReaction = (message.reactions || []).find((reaction) => reaction.userId === user?.id);
 
               return (
                 <article className={`message ${mine ? "mine" : "theirs"}`} key={message.id}>
+                  {message.replyPreviewText && (
+                    <div className="reply-preview">
+                      <Reply size={13} />
+                      <span>{message.replyPreviewText}</span>
+                    </div>
+                  )}
                   <p className="message-main">{textToShow}</p>
                   <MessageMedia message={message} />
+                  {!isGroupChat && (
+                    <div className="message-actions" aria-label="Message actions">
+                      <button type="button" title="Reply" onClick={() => beginReply(message)}>
+                        <Reply size={14} />
+                      </button>
+                      {["👍", "❤️", "😂"].map((emoji) => (
+                        <button
+                          className={myReaction?.emoji === emoji ? "selected" : ""}
+                          key={emoji}
+                          type="button"
+                          title={`React ${emoji}`}
+                          onClick={() => reactToMessage(message, emoji)}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {message.reactions?.length > 0 && (
+                    <div className="reaction-strip">
+                      {message.reactions.map((reaction) => (
+                        <span key={`${reaction.userId}:${reaction.emoji}`}>{reaction.emoji}</span>
+                      ))}
+                    </div>
+                  )}
                   {mine && <small className="message-status">{message.status === "read" ? "Read" : "Delivered"}</small>}
                 </article>
               );
@@ -1572,6 +1645,15 @@ export function App() {
           </div>
 
           <form className="composer" onSubmit={sendMessage}>
+            {replyingTo && (
+              <div className="composer-reply">
+                <Reply size={15} />
+                <span>{replyingTo.text}</span>
+                <button type="button" title="Cancel reply" onClick={() => setReplyingTo(null)}>
+                  <X size={15} />
+                </button>
+              </div>
+            )}
             <input ref={fileInputRef} hidden type="file" onChange={handleAttachment} />
             <button
               disabled={!user || !activeChat}

@@ -18,6 +18,12 @@ function mapUser(row) {
 
 function mapMessage(row) {
   if (!row) return null;
+  let reactions = [];
+  try {
+    reactions = row.reactions_json ? JSON.parse(row.reactions_json) : [];
+  } catch {
+    reactions = [];
+  }
 
   return {
     id: row.id,
@@ -32,6 +38,9 @@ function mapMessage(row) {
     mediaUrl: row.media_url || null,
     mediaName: row.media_name || null,
     mediaMime: row.media_mime || null,
+    replyToMessageId: row.reply_to_message_id || null,
+    replyPreviewText: row.reply_preview_text || null,
+    reactions,
     status: row.status,
     readAt: row.read_at instanceof Date ? row.read_at.toISOString() : row.read_at,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at
@@ -53,7 +62,7 @@ function mapGroup(row) {
 
 function formatMySqlDateTime(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
-  return date.toISOString().slice(0, 19).replace("T", " ");
+  return date.toISOString().slice(0, 23).replace("T", " ");
 }
 
 export function createMySqlRepository() {
@@ -113,6 +122,15 @@ export function createMySqlRepository() {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
     await pool.query("ALTER TABLE messages ADD COLUMN media_mime VARCHAR(120) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE messages ADD COLUMN reply_to_message_id VARCHAR(64) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE messages ADD COLUMN reply_preview_text TEXT NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE messages ADD COLUMN reactions_json TEXT NULL").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
 
@@ -373,20 +391,48 @@ export function createMySqlRepository() {
 
       await pool.query(
         `INSERT INTO messages
-          (id, sender_id, receiver_id, original_text, translated_text, source_language, target_language, message_type, media_url, media_name, media_mime, status, created_at)
+          (id, sender_id, receiver_id, original_text, translated_text, source_language, target_language, message_type, media_url, media_name, media_mime, reply_to_message_id, reply_preview_text, reactions_json, status, created_at)
          VALUES
-          (:id, :senderId, :receiverId, :originalText, :translatedText, :sourceLanguage, :targetLanguage, :messageType, :mediaUrl, :mediaName, :mediaMime, :status, :createdAt)`,
+          (:id, :senderId, :receiverId, :originalText, :translatedText, :sourceLanguage, :targetLanguage, :messageType, :mediaUrl, :mediaName, :mediaMime, :replyToMessageId, :replyPreviewText, :reactionsJson, :status, :createdAt)`,
         {
           ...message,
           messageType: message.messageType || "text",
           mediaUrl: message.mediaUrl || null,
           mediaName: message.mediaName || null,
           mediaMime: message.mediaMime || null,
+          replyToMessageId: message.replyToMessageId || null,
+          replyPreviewText: message.replyPreviewText || null,
+          reactionsJson: JSON.stringify(message.reactions || []),
           createdAt: formattedCreatedAt
         }
       );
 
-      return { ...message, createdAt: formattedCreatedAt };
+      return { ...message, reactions: message.reactions || [], createdAt: formattedCreatedAt };
+    },
+
+    async getMessageById(messageId) {
+      const [rows] = await pool.query("SELECT * FROM messages WHERE id = :messageId LIMIT 1", { messageId });
+      return mapMessage(rows[0]);
+    },
+
+    async updateMessageReaction(messageId, userId, emoji) {
+      const message = await this.getMessageById(messageId);
+      if (!message) return null;
+
+      const reactions = (message.reactions || []).filter((reaction) => reaction.userId !== userId);
+      if (emoji) {
+        reactions.push({
+          userId,
+          emoji,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      await pool.query(
+        "UPDATE messages SET reactions_json = :reactionsJson WHERE id = :messageId",
+        { messageId, reactionsJson: JSON.stringify(reactions) }
+      );
+      return { ...message, reactions };
     },
 
     async createGroup(payload) {
