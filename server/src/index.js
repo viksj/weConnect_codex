@@ -174,26 +174,6 @@ async function formatGroupMessageForUser(message, user) {
   };
 }
 
-async function formatDirectMessageForUser(message, user) {
-  const isSender = message.senderId === user.id;
-  const replyPreviewText = message.replyPreviewText
-    ? applyScriptPreference(
-        await translateText(
-          decryptMessage(message.replyPreviewText),
-          message.sourceLanguage,
-          isSender ? message.sourceLanguage : user.motherTongue
-        ),
-        isSender ? message.sourceLanguage : user.motherTongue,
-        user.scriptPreference
-      )
-    : "";
-
-  return {
-    ...message,
-    replyPreviewText: replyPreviewText ? encryptMessage(replyPreviewText) : null
-  };
-}
-
 async function withGroupSummary(userId, group) {
   const user = await database.getUserById(userId);
   const summary = await database.getGroupSummary(userId, group.id);
@@ -555,8 +535,8 @@ io.on("connection", (socket) => {
       status: "delivered"
     });
 
-    io.to(sender.id).emit("message:new", await formatDirectMessageForUser(message, sender));
-    io.to(receiverId).emit("message:new", await formatDirectMessageForUser(message, receiver));
+    io.to(sender.id).emit("message:new", message);
+    io.to(receiverId).emit("message:new", message);
   });
 
   socket.on("message:react", async ({ messageId, emoji }) => {
@@ -605,8 +585,8 @@ io.on("connection", (socket) => {
     });
     if (!updatedMessage) return;
 
-    io.to(updatedMessage.senderId).emit("message:update", await formatDirectMessageForUser(updatedMessage, sender));
-    io.to(updatedMessage.receiverId).emit("message:update", await formatDirectMessageForUser(updatedMessage, receiver));
+    io.to(updatedMessage.senderId).emit("message:update", updatedMessage);
+    io.to(updatedMessage.receiverId).emit("message:update", updatedMessage);
   });
 
   socket.on("group:message:send", async ({
