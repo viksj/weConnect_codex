@@ -66,6 +66,8 @@ const dictionary = {
       "kya naam hai?": "What is the name?",
       "yeh kya hai?": "What is this?",
       "ye kya hai": "What is this?",
+      "mujhe pani chahiye": "I need water",
+      "pani chahiye": "I need water",
       "kahan ho?": "Where are you?",
       "kahan hain?": "Where are you?",
       "kab call karoge?": "When will you call?",
@@ -137,6 +139,8 @@ const dictionary = {
       // Questions
       "who are you?": "आप कौन हैं?",
       "what is your name?": "आपका नाम क्या है?",
+      "i need water": "मुझे पानी चाहिए",
+      "i want water": "मुझे पानी चाहिए",
       "where are you?": "आप कहां हैं?",
       "when will you call?": "आप कब कॉल करोगे?",
       "when will we meet?": "हम कब मिलेंगे?"
@@ -144,13 +148,65 @@ const dictionary = {
   }
 };
 
+const romanHindiHints = [
+  "kaise",
+  "kya",
+  "kar",
+  "rahe",
+  "raha",
+  "rahi",
+  "hain",
+  "hoon",
+  "hun",
+  "aap",
+  "tum",
+  "mujhe",
+  "pani",
+  "chahiye",
+  "namaste",
+  "dhanyavaad",
+  "shukriya",
+  "haan",
+  "nahi",
+  "theek",
+  "thik",
+  "kahan",
+  "kab",
+  "kaun",
+  "kon"
+];
+
+function normalizeText(text) {
+  return text.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function stripPunctuation(text) {
+  return text.replace(/[?!,.;:]/g, "").trim();
+}
+
+function tokenize(text) {
+  return stripPunctuation(normalizeText(text)).split(" ").filter(Boolean);
+}
+
+function containsTokenSequence(textTokens, phraseTokens) {
+  if (phraseTokens.length === 0 || phraseTokens.length > textTokens.length) return false;
+
+  return textTokens.some((_, index) =>
+    phraseTokens.every((phraseToken, phraseIndex) => textTokens[index + phraseIndex] === phraseToken)
+  );
+}
+
+function hasPhrase(text, phrase) {
+  const textTokens = tokenize(text);
+  const phraseTokens = tokenize(phrase);
+  return containsTokenSequence(textTokens, phraseTokens);
+}
 
 export function detectLanguage(text, fallback = "en") {
   if (/[\u0900-\u097F]/.test(text)) return "hi";
 
-  const normalized = text.trim().toLowerCase();
-  const hindiRomanPhrases = dictionary.hi.en;
-  if (Object.keys(hindiRomanPhrases).some((phrase) => normalized.includes(phrase.replace("?", "")))) {
+  const tokens = tokenize(text);
+  if (romanHindiHints.some((hint) => tokens.includes(hint))) {
     return "hi";
   }
 
@@ -179,6 +235,23 @@ async function translateWithLibreTranslate(text, fromLanguage, toLanguage) {
 
   const body = await response.json();
   return body.translatedText || null;
+}
+
+async function translateWithMyMemory(text, fromLanguage, toLanguage) {
+  const response = await fetch(
+    `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromLanguage}|${toLanguage}`
+  );
+
+  if (!response.ok) {
+    throw new Error(`MyMemory translation failed with ${response.status}`);
+  }
+
+  const body = await response.json();
+  if (body.responseStatus === 200 && body.responseData?.translatedText) {
+    return body.responseData.translatedText;
+  }
+
+  throw new Error(`MyMemory returned status ${body.responseStatus}`);
 }
 
 async function translateWithOpenAI(text, fromLanguage, toLanguage) {
@@ -215,27 +288,57 @@ async function translateWithOpenAI(text, fromLanguage, toLanguage) {
   return body.output_text?.trim() || null;
 }
 
+async function translateWithProvider(provider, text, fromLanguage, toLanguage) {
+  if (provider === "openai") {
+    return translateWithOpenAI(text, fromLanguage, toLanguage);
+  }
+
+  if (provider === "libretranslate") {
+    return translateWithLibreTranslate(text, fromLanguage, toLanguage);
+  }
+
+  if (provider === "mymemory") {
+    return translateWithMyMemory(text, fromLanguage, toLanguage);
+  }
+
+  return null;
+}
+
+async function translateWithConfiguredProviders(text, fromLanguage, toLanguage) {
+  const configuredProvider = process.env.TRANSLATION_PROVIDER || "local";
+  const providers = [];
+
+  if (configuredProvider !== "local") {
+    providers.push(configuredProvider);
+  }
+
+  if (
+    process.env.ENABLE_PUBLIC_TRANSLATION_FALLBACK !== "false" &&
+    configuredProvider !== "mymemory" &&
+    configuredProvider !== "local"
+  ) {
+    providers.push("mymemory");
+  }
+
+  for (const provider of providers) {
+    const providerTranslation = await translateWithProvider(provider, text, fromLanguage, toLanguage).catch((error) => {
+      console.error(`${provider} translation failed, using next fallback`, error);
+      return null;
+    });
+    if (providerTranslation) return providerTranslation;
+  }
+
+  return null;
+}
+
 export async function translateText(text, fromLanguage, toLanguage) {
   if (!text || fromLanguage === toLanguage) return text;
 
-  if (process.env.TRANSLATION_PROVIDER === "openai") {
-    const providerTranslation = await translateWithOpenAI(text, fromLanguage, toLanguage).catch((error) => {
-      console.error("OpenAI translation failed, using local fallback", error);
-      return null;
-    });
-    if (providerTranslation) return providerTranslation;
-  }
-
-  if (process.env.TRANSLATION_PROVIDER === "libretranslate") {
-    const providerTranslation = await translateWithLibreTranslate(text, fromLanguage, toLanguage).catch((error) => {
-      console.error("Translation provider failed, using local fallback", error);
-      return null;
-    });
-    if (providerTranslation) return providerTranslation;
-  }
+  const providerTranslation = await translateWithConfiguredProviders(text, fromLanguage, toLanguage);
+  if (providerTranslation) return providerTranslation;
 
   // Normalize text: lowercase, trim, remove extra spaces, handle punctuation
-  const normalized = text.trim().toLowerCase().replace(/\s+/g, " ");
+  const normalized = normalizeText(text);
   
   // Try exact match first
   let translated = dictionary[fromLanguage]?.[toLanguage]?.[normalized];
@@ -250,11 +353,11 @@ export async function translateText(text, fromLanguage, toLanguage) {
   const dictPhrases = dictionary[fromLanguage]?.[toLanguage];
   if (dictPhrases) {
     for (const [key, value] of Object.entries(dictPhrases)) {
-      const keyNormalized = key.replace(/[?!,.;:]/g, "").trim();
+      const keyNormalized = stripPunctuation(normalizeText(key));
       const testNormalized = noPunctuation;
+      const keyTokens = tokenize(keyNormalized);
       
-      // Check if normalized text contains the key or key contains normalized text
-      if (keyNormalized.includes(testNormalized) || testNormalized.includes(keyNormalized)) {
+      if (keyTokens.length > 1 && (hasPhrase(testNormalized, keyNormalized) || hasPhrase(keyNormalized, testNormalized))) {
         return value;
       }
     }
