@@ -142,14 +142,6 @@ function mediaKind(file) {
   return "file";
 }
 
-function normalizeDisplayText(text = "") {
-  return text.trim().toLowerCase().replace(/[?!,.;:]/g, "").replace(/\s+/g, " ");
-}
-
-function isSameDisplayText(firstText, secondText) {
-  return Boolean(firstText && secondText && normalizeDisplayText(firstText) === normalizeDisplayText(secondText));
-}
-
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1556,31 +1548,12 @@ export function App() {
             {visibleMessages.map((message) => {
               const mine = message.senderId === user?.id;
               const textToShow = mine ? message.originalText : message.translatedText;
-              const helperText = mine ? message.translatedText : message.originalText;
-              const helperLabel = mine ? "Translation" : "Original";
-              const translationUnchanged = isSameDisplayText(message.originalText, message.translatedText);
-              const sourceLabel = languageName[message.sourceLanguage] || message.sourceLanguage;
-              const targetLabel = languageName[message.targetLanguage] || message.targetLanguage;
 
               return (
                 <article className={`message ${mine ? "mine" : "theirs"}`} key={message.id}>
                   <p className="message-main">{textToShow}</p>
                   <MessageMedia message={message} />
-                  {helperText && helperText !== textToShow && (
-                    <div className="message-alt">
-                      <span>{helperLabel}</span>
-                      <strong>{helperText}</strong>
-                    </div>
-                  )}
-                  <div className="message-meta">
-                    <span>
-                      {sourceLabel} to {targetLabel}
-                    </span>
-                    {translationUnchanged && message.sourceLanguage !== message.targetLanguage && (
-                      <span className="translation-warning">Translation needs review</span>
-                    )}
-                    {mine && <span>{message.status === "read" ? "Read" : "Delivered"}</span>}
-                  </div>
+                  {mine && <small className="message-status">{message.status === "read" ? "Read" : "Delivered"}</small>}
                 </article>
               );
             })}
