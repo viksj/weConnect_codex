@@ -167,8 +167,7 @@ async function run() {
       {
         name: "Alice Local",
         emailOrPhone: alicePhone,
-        motherTongue: "hi",
-        understands: "en"
+        motherTongue: "hi"
       },
       aliceToken
     );
@@ -177,8 +176,7 @@ async function run() {
       {
         name: "Bob Local",
         emailOrPhone: bobPhone,
-        motherTongue: "en",
-        understands: "hi"
+        motherTongue: "en"
       },
       bobToken
     );

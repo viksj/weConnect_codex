@@ -49,8 +49,7 @@ import { playVoiceTranslation, stopVoicePlayback } from "./voiceTranslator";
 const demoUser = {
   name: "You",
   emailOrPhone: "+91 90000 00000",
-  motherTongue: "hi",
-  understands: "en"
+  motherTongue: "hi"
 };
 
 function getRtcConfig() {
@@ -330,7 +329,7 @@ export function App() {
       // Play voice translation if enabled and message is from someone else
       if (message.senderId !== user.id && voiceTranslationEnabled) {
         const textToSpeak = decryptedMessage.translatedText || decryptedMessage.originalText;
-        const language = decryptedMessage.targetLanguage || user?.understands || "en";
+        const language = decryptedMessage.targetLanguage || user?.motherTongue || "en";
         try {
           playVoiceTranslation(textToSpeak, language, 1, 1, 0.8);
         } catch (error) {
@@ -486,8 +485,7 @@ export function App() {
       setProfileForm({
         name: user.name,
         emailOrPhone: user.emailOrPhone,
-        motherTongue: user.motherTongue,
-        understands: user.understands
+        motherTongue: user.motherTongue
       });
     }
   }, [user]);
@@ -761,8 +759,7 @@ export function App() {
     try {
       const result = await updateUser(user.id, {
         name: profileForm.name,
-        motherTongue: profileForm.motherTongue,
-        understands: profileForm.understands
+        motherTongue: profileForm.motherTongue
       }, authToken);
       setUser(result.user);
       setError("Profile updated.");
@@ -1106,34 +1103,19 @@ export function App() {
                 onChange={(event) => setForm({ ...form, emailOrPhone: event.target.value })}
               />
             </label>
-            <div className="split">
-              <label>
-                Mother tongue
-                <select
-                  value={form.motherTongue}
-                  onChange={(event) => setForm({ ...form, motherTongue: event.target.value })}
-                >
-                  {languages.map((language) => (
-                    <option key={language.code} value={language.code}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                I also understand
-                <select
-                  value={form.understands}
-                  onChange={(event) => setForm({ ...form, understands: event.target.value })}
-                >
-                  {languages.map((language) => (
-                    <option key={language.code} value={language.code}>
-                      {language.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <label>
+              My Language
+              <select
+                value={form.motherTongue}
+                onChange={(event) => setForm({ ...form, motherTongue: event.target.value })}
+              >
+                {languages.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div id="recaptcha-container" />
             <button className="primary-button" type="submit" disabled={isSendingOtp}>
               {isSendingOtp ? "Sending OTP..." : "Send OTP"}
@@ -1183,14 +1165,12 @@ export function App() {
               </div>
               <input value={profileForm.name || ""} onChange={(event) => setProfileForm({ ...profileForm, name: event.target.value })} />
               <input disabled value={profileForm.emailOrPhone || ""} title="Registered phone cannot be changed" />
-              <div className="mini-split">
+              <label className="mini-field">
+                My Language
                 <select value={profileForm.motherTongue || "hi"} onChange={(event) => setProfileForm({ ...profileForm, motherTongue: event.target.value })}>
                   {languages.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}
                 </select>
-                <select value={profileForm.understands || "en"} onChange={(event) => setProfileForm({ ...profileForm, understands: event.target.value })}>
-                  {languages.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}
-                </select>
-              </div>
+              </label>
               <button className="secondary-button" type="submit">Save profile</button>
             </form>
           )}

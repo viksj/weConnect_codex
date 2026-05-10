@@ -225,7 +225,7 @@ export function createMySqlRepository() {
         emailOrPhone: payload.emailOrPhone,
         firebaseUid: payload.firebaseUid || existingUser?.firebaseUid || null,
         motherTongue: payload.motherTongue || "hi",
-        understands: payload.understands || "en",
+        understands: payload.understands || payload.motherTongue || "hi",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 
@@ -271,7 +271,7 @@ export function createMySqlRepository() {
         userId,
         name: payload.name,
         motherTongue: payload.motherTongue || "hi",
-        understands: payload.understands || "en",
+        understands: payload.understands || payload.motherTongue || "hi",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 

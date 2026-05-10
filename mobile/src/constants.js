@@ -11,6 +11,5 @@ export const languageName = {
 export const demoUser = {
   name: "You",
   emailOrPhone: "+91 90000 00000",
-  motherTongue: "hi",
-  understands: "en"
+  motherTongue: "hi"
 };

@@ -233,7 +233,7 @@ app.post("/api/register", requireFirebaseAuth, async (req, res) => {
 });
 
 app.patch("/api/users/:userId", requireFirebaseAuth, loadAuthenticatedUser, requireUserParam, async (req, res) => {
-  const { name, motherTongue, understands } = req.body;
+  const { name, motherTongue } = req.body;
 
   if (!name?.trim()) {
     res.status(400).json({ error: "Name is required." });
@@ -244,7 +244,7 @@ app.patch("/api/users/:userId", requireFirebaseAuth, loadAuthenticatedUser, requ
     const user = await database.updateUser(req.params.userId, {
       name: name.trim(),
       motherTongue,
-      understands
+      understands: motherTongue
     });
     res.json({ user: withOnlineStatus(user) });
     await broadcastContacts();

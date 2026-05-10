@@ -350,14 +350,9 @@ function AuthScreen({ connection, form, isLoading, otp, screen, setForm, setOtp,
               onChangeText={(emailOrPhone) => setForm({ ...form, emailOrPhone })}
             />
             <LanguageSelector
-              label="Mother tongue"
+              label="My Language"
               value={form.motherTongue}
               onChange={(motherTongue) => setForm({ ...form, motherTongue })}
-            />
-            <LanguageSelector
-              label="I understand"
-              value={form.understands}
-              onChange={(understands) => setForm({ ...form, understands })}
             />
             <PrimaryButton icon="send" label="Send OTP" onPress={onSendOtp} />
           </View>
