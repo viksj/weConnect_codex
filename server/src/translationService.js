@@ -23,6 +23,10 @@ const dictionary = {
       
       // Activities
       "kya kar rahe ho?": "What are you doing?",
+      "kya kar rhe ho?": "What are you doing?",
+      "kya kar rhe ho": "What are you doing?",
+      "kya kr rhe ho": "What are you doing?",
+      "kya kr rahe ho": "What are you doing?",
       "kya kar raha hain?": "What are you doing?",
       "kya kar rahi hain?": "What are you doing?",
       "kya kar raha hun?": "What am I doing?",
@@ -152,10 +156,16 @@ const romanHindiHints = [
   "kaise",
   "kya",
   "kar",
+  "kr",
   "rahe",
+  "rhe",
   "raha",
+  "rha",
   "rahi",
+  "rhi",
   "hain",
+  "hai",
+  "h",
   "hoon",
   "hun",
   "aap",
@@ -178,6 +188,26 @@ const romanHindiHints = [
 
 function normalizeText(text) {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeRomanHindiText(text) {
+  const replacements = {
+    kr: "kar",
+    rhe: "rahe",
+    rha: "raha",
+    rhi: "rahi",
+    h: "hai",
+    hu: "hun",
+    mai: "main",
+    me: "main",
+    ap: "aap",
+    kese: "kaise",
+    kaisa: "kaise"
+  };
+
+  return tokenize(text)
+    .map((token) => replacements[token] || token)
+    .join(" ");
 }
 
 function stripPunctuation(text) {
@@ -325,7 +355,49 @@ async function translateWithConfiguredProviders(text, fromLanguage, toLanguage) 
       console.error(`${provider} translation failed, using next fallback`, error);
       return null;
     });
-    if (providerTranslation) return providerTranslation;
+    if (isUsefulProviderTranslation(providerTranslation, text, fromLanguage, toLanguage)) {
+      return providerTranslation.trim();
+    }
+  }
+
+  return null;
+}
+
+function isUsefulProviderTranslation(providerTranslation, originalText, fromLanguage, toLanguage) {
+  if (!providerTranslation?.trim()) return false;
+
+  const normalizedProviderText = stripPunctuation(normalizeText(providerTranslation));
+  const normalizedOriginalText = stripPunctuation(normalizeText(originalText));
+  if (normalizedProviderText === normalizedOriginalText && fromLanguage !== toLanguage) return false;
+
+  return true;
+}
+
+function translateWithLocalDictionary(text, fromLanguage, toLanguage) {
+  const phrases = dictionary[fromLanguage]?.[toLanguage];
+  if (!phrases) return null;
+
+  const normalized = normalizeText(text);
+  const noPunctuation = stripPunctuation(normalized);
+  const romanNormalized = normalizeRomanHindiText(text);
+
+  let translated = phrases[normalized] || phrases[noPunctuation] || phrases[romanNormalized];
+  if (translated) return translated;
+
+  for (const [key, value] of Object.entries(phrases)) {
+    const keyNormalized = stripPunctuation(normalizeText(key));
+    const keyRomanNormalized = normalizeRomanHindiText(key);
+    const keyTokens = tokenize(keyNormalized);
+
+    if (
+      keyTokens.length > 1 &&
+      (hasPhrase(noPunctuation, keyNormalized) ||
+        hasPhrase(keyNormalized, noPunctuation) ||
+        hasPhrase(romanNormalized, keyRomanNormalized) ||
+        hasPhrase(keyRomanNormalized, romanNormalized))
+    ) {
+      return value;
+    }
   }
 
   return null;
@@ -334,34 +406,11 @@ async function translateWithConfiguredProviders(text, fromLanguage, toLanguage) 
 export async function translateText(text, fromLanguage, toLanguage) {
   if (!text || fromLanguage === toLanguage) return text;
 
+  const localTranslation = translateWithLocalDictionary(text, fromLanguage, toLanguage);
+  if (localTranslation) return localTranslation;
+
   const providerTranslation = await translateWithConfiguredProviders(text, fromLanguage, toLanguage);
   if (providerTranslation) return providerTranslation;
-
-  // Normalize text: lowercase, trim, remove extra spaces, handle punctuation
-  const normalized = normalizeText(text);
-  
-  // Try exact match first
-  let translated = dictionary[fromLanguage]?.[toLanguage]?.[normalized];
-  if (translated) return translated;
-
-  // Try matching without punctuation
-  const noPunctuation = normalized.replace(/[?!,.;:]/g, "").trim();
-  translated = dictionary[fromLanguage]?.[toLanguage]?.[noPunctuation];
-  if (translated) return translated;
-
-  // Try partial matching - look for phrases that contain the text
-  const dictPhrases = dictionary[fromLanguage]?.[toLanguage];
-  if (dictPhrases) {
-    for (const [key, value] of Object.entries(dictPhrases)) {
-      const keyNormalized = stripPunctuation(normalizeText(key));
-      const testNormalized = noPunctuation;
-      const keyTokens = tokenize(keyNormalized);
-      
-      if (keyTokens.length > 1 && (hasPhrase(testNormalized, keyNormalized) || hasPhrase(keyNormalized, testNormalized))) {
-        return value;
-      }
-    }
-  }
 
   const label = `${fromLanguage.toUpperCase()} -> ${toLanguage.toUpperCase()}`;
   return `[${label}] ${text}`;

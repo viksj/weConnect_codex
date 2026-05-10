@@ -14,6 +14,11 @@ assertEqual(detectLanguage("this is fine", "en"), "en", "English text should kee
 
 assertEqual(await translateText("Kaise ho?", "hi", "en"), "How are you?", "Known Hindi phrase should translate");
 assertEqual(
+  await translateText("kya kar rhe ho", "hi", "en"),
+  "What are you doing?",
+  "Roman Hindi spelling variant should translate before public providers"
+);
+assertEqual(
   await translateText("mujhe pani chahiye", "hi", "en"),
   "I need water",
   "Roman Hindi should not accidentally match short English greeting keys"
