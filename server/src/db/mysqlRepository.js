@@ -43,6 +43,7 @@ function mapMessage(row) {
     reactions,
     status: row.status,
     readAt: row.read_at instanceof Date ? row.read_at.toISOString() : row.read_at,
+    editedAt: row.edited_at instanceof Date ? row.edited_at.toISOString() : row.edited_at,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at
   };
 }
@@ -133,6 +134,9 @@ export function createMySqlRepository() {
     await pool.query("ALTER TABLE messages ADD COLUMN reactions_json TEXT NULL").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
+    await pool.query("ALTER TABLE messages ADD COLUMN edited_at DATETIME(3) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS contacts (
@@ -218,6 +222,9 @@ export function createMySqlRepository() {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
     await pool.query("ALTER TABLE group_messages ADD COLUMN reactions_json TEXT NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE group_messages ADD COLUMN edited_at DATETIME(3) NULL").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
   }
@@ -445,6 +452,29 @@ export function createMySqlRepository() {
       return { ...message, reactions };
     },
 
+    async updateMessageContent(messageId, payload) {
+      const editedAt = payload.editedAt ? new Date(payload.editedAt) : new Date();
+      const formattedEditedAt = formatMySqlDateTime(editedAt);
+      await pool.query(
+        `UPDATE messages
+         SET original_text = :originalText,
+             translated_text = :translatedText,
+             source_language = :sourceLanguage,
+             target_language = :targetLanguage,
+             edited_at = :editedAt
+         WHERE id = :messageId`,
+        {
+          messageId,
+          originalText: payload.originalText,
+          translatedText: payload.translatedText,
+          sourceLanguage: payload.sourceLanguage,
+          targetLanguage: payload.targetLanguage,
+          editedAt: formattedEditedAt
+        }
+      );
+      return this.getMessageById(messageId);
+    },
+
     async createGroup(payload) {
       const group = {
         id: payload.id || uuid(),
@@ -608,6 +638,25 @@ export function createMySqlRepository() {
         { messageId, reactionsJson: JSON.stringify(reactions) }
       );
       return { ...message, reactions };
+    },
+
+    async updateGroupMessageContent(messageId, payload) {
+      const editedAt = payload.editedAt ? new Date(payload.editedAt) : new Date();
+      const formattedEditedAt = formatMySqlDateTime(editedAt);
+      await pool.query(
+        `UPDATE group_messages
+         SET original_text = :originalText,
+             source_language = :sourceLanguage,
+             edited_at = :editedAt
+         WHERE id = :messageId`,
+        {
+          messageId,
+          originalText: payload.originalText,
+          sourceLanguage: payload.sourceLanguage,
+          editedAt: formattedEditedAt
+        }
+      );
+      return this.getGroupMessageById(messageId);
     },
 
     async markGroupRead(userId, groupId) {

@@ -127,6 +127,20 @@ export function createMemoryRepository() {
       return message;
     },
 
+    async updateMessageContent(messageId, payload) {
+      const message = messages.find((item) => item.id === messageId);
+      if (!message) return null;
+
+      Object.assign(message, {
+        originalText: payload.originalText,
+        translatedText: payload.translatedText,
+        sourceLanguage: payload.sourceLanguage,
+        targetLanguage: payload.targetLanguage,
+        editedAt: payload.editedAt
+      });
+      return message;
+    },
+
     async createGroup(payload) {
       const group = {
         id: payload.id || uuid(),
@@ -194,6 +208,18 @@ export function createMemoryRepository() {
         });
       }
       message.reactions = reactions;
+      return message;
+    },
+
+    async updateGroupMessageContent(messageId, payload) {
+      const message = groupMessages.find((item) => item.id === messageId);
+      if (!message) return null;
+
+      Object.assign(message, {
+        originalText: payload.originalText,
+        sourceLanguage: payload.sourceLanguage,
+        editedAt: payload.editedAt
+      });
       return message;
     },
 

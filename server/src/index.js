@@ -546,6 +546,32 @@ io.on("connection", (socket) => {
     io.to(updatedMessage.receiverId).emit("message:reaction", payload);
   });
 
+  socket.on("message:edit", async ({ messageId, text }) => {
+    const sender = socket.data.user;
+    const message = await database.getMessageById?.(messageId);
+    if (!sender || !message || message.senderId !== sender.id || !text?.trim()) return;
+
+    const receiver = await database.getUserById(message.receiverId);
+    if (!receiver) return;
+
+    const decryptedText = decryptMessage(text).trim();
+    if (!decryptedText) return;
+
+    const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
+    const translatedText = await translateText(decryptedText, sourceLanguage, receiver.motherTongue);
+    const updatedMessage = await database.updateMessageContent?.(messageId, {
+      originalText: encryptMessage(decryptedText),
+      translatedText: encryptMessage(translatedText),
+      sourceLanguage,
+      targetLanguage: receiver.motherTongue,
+      editedAt: new Date().toISOString()
+    });
+    if (!updatedMessage) return;
+
+    io.to(updatedMessage.senderId).emit("message:update", updatedMessage);
+    io.to(updatedMessage.receiverId).emit("message:update", updatedMessage);
+  });
+
   socket.on("group:message:send", async ({
     groupId,
     text,
@@ -611,6 +637,37 @@ io.on("connection", (socket) => {
       reactions: updatedMessage.reactions || []
     };
     members.forEach((member) => io.to(member.id).emit("message:reaction", payload));
+  });
+
+  socket.on("group:message:edit", async ({ groupId, messageId, text }) => {
+    const sender = socket.data.user;
+    if (!sender || !groupId || !messageId || !text?.trim()) return;
+
+    const group = await database.getGroupByIdForUser(groupId, sender.id);
+    if (!group) return;
+
+    const message = await database.getGroupMessageById?.(messageId);
+    if (!message || message.groupId !== groupId || message.senderId !== sender.id) return;
+
+    const decryptedText = decryptMessage(text).trim();
+    if (!decryptedText) return;
+
+    const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
+    const updatedMessage = await database.updateGroupMessageContent?.(messageId, {
+      originalText: encryptMessage(decryptedText),
+      sourceLanguage,
+      editedAt: new Date().toISOString()
+    });
+    if (!updatedMessage) return;
+
+    const members = await database.getGroupMembers(groupId);
+    await Promise.all(
+      members.map(async (member) => {
+        const translatedMessage = await formatGroupMessageForUser(updatedMessage, member);
+        io.to(member.id).emit("message:update", translatedMessage);
+      })
+    );
+    members.forEach((member) => io.to(member.id).emit("groups:update"));
   });
 
   socket.on("message:read", async ({ contactId }) => {

@@ -37,6 +37,7 @@ function mapMessage(document) {
     reactions: document.reactions || [],
     status: document.status,
     readAt: document.readAt,
+    editedAt: document.editedAt || null,
     createdAt: document.createdAt
   };
 }
@@ -246,6 +247,18 @@ export function createMongoRepository() {
       return { ...message, reactions };
     },
 
+    async updateMessageContent(messageId, payload) {
+      const updates = {
+        originalText: payload.originalText,
+        translatedText: payload.translatedText,
+        sourceLanguage: payload.sourceLanguage,
+        targetLanguage: payload.targetLanguage,
+        editedAt: payload.editedAt
+      };
+      await messagesCollection().updateOne({ id: messageId }, { $set: updates });
+      return this.getMessageById(messageId);
+    },
+
     async createGroup(payload) {
       const group = {
         id: payload.id || uuid(),
@@ -334,6 +347,16 @@ export function createMongoRepository() {
 
       await groupMessagesCollection().updateOne({ id: messageId }, { $set: { reactions } });
       return { ...message, reactions };
+    },
+
+    async updateGroupMessageContent(messageId, payload) {
+      const updates = {
+        originalText: payload.originalText,
+        sourceLanguage: payload.sourceLanguage,
+        editedAt: payload.editedAt
+      };
+      await groupMessagesCollection().updateOne({ id: messageId }, { $set: updates });
+      return this.getGroupMessageById(messageId);
     },
 
     async markGroupRead(userId, groupId) {

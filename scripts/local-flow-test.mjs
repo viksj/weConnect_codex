@@ -201,6 +201,25 @@ async function reactAndAssertMessage({ reactorSocket, receiverSocket, reactor, m
   return reactionUpdate;
 }
 
+async function editAndAssertMessage({ editorSocket, receiverSocket, editor, messageId, text, expectedTranslation }) {
+  const incomingUpdate = waitForEvent(receiverSocket, "message:update");
+  editorSocket.emit("message:edit", {
+    messageId,
+    text: encryptMessage(text)
+  });
+
+  const message = await incomingUpdate;
+  assert(message.id === messageId, "Edited message id did not match");
+  assert(message.senderId === editor.id, `Edited message sender is not ${editor.name}`);
+  assert(decryptMessage(message.originalText) === text, "Edited original message did not round-trip");
+  assert(
+    decryptMessage(message.translatedText) === expectedTranslation,
+    `Expected edited translation "${expectedTranslation}", got "${decryptMessage(message.translatedText)}"`
+  );
+  assert(message.editedAt, "Edited direct message did not include editedAt");
+  return message;
+}
+
 async function sendAndAssertGroupMessage({
   senderSocket,
   receiverSocket,
@@ -251,6 +270,27 @@ async function reactAndAssertGroupMessage({ reactorSocket, receiverSocket, react
   assert(reactionUpdate.messageId === messageId, "Group reaction update message id did not match");
   assert(reaction?.emoji === emoji, `Expected group reaction ${emoji}, got ${reaction?.emoji || "none"}`);
   return reactionUpdate;
+}
+
+async function editAndAssertGroupMessage({ editorSocket, receiverSocket, editor, groupId, messageId, text, expectedTranslation }) {
+  const incomingUpdate = waitForEvent(receiverSocket, "message:update");
+  editorSocket.emit("group:message:edit", {
+    groupId,
+    messageId,
+    text: encryptMessage(text)
+  });
+
+  const message = await incomingUpdate;
+  assert(message.id === messageId, "Edited group message id did not match");
+  assert(message.groupId === groupId, "Edited group message group id did not match");
+  assert(message.senderId === editor.id, `Edited group message sender is not ${editor.name}`);
+  assert(decryptMessage(message.originalText) === text, "Edited group original message did not round-trip");
+  assert(
+    decryptMessage(message.translatedText) === expectedTranslation,
+    `Expected edited group translation "${expectedTranslation}", got "${decryptMessage(message.translatedText)}"`
+  );
+  assert(message.editedAt, "Edited group message did not include editedAt");
+  return message;
 }
 
 async function sendAndAssertVoiceMessage({ senderSocket, receiverSocket, sender, receiver, transcript, expectedTranslation }) {
@@ -364,6 +404,14 @@ async function run() {
       messageId: firstMessage.id,
       emoji: "👍"
     });
+    await editAndAssertMessage({
+      editorSocket: aliceSocket,
+      receiverSocket: bobSocket,
+      editor: alice,
+      messageId: firstMessage.id,
+      text: "Namaste",
+      expectedTranslation: "Hello"
+    });
     const secondMessage = await sendAndAssertMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
@@ -372,7 +420,7 @@ async function run() {
       text: "kya kar rhe ho",
       expectedTranslation: "What are you doing?",
       replyToMessageId: firstMessage.id,
-      replyPreviewText: "Kaise ho?"
+      replyPreviewText: "Namaste"
     });
     const voiceMessage = await sendAndAssertVoiceMessage({
       senderSocket: aliceSocket,
@@ -391,10 +439,11 @@ async function run() {
     assert(storedFirstMessage, "First stored message was not returned");
     assert(storedSecondMessage, "Second stored message was not returned");
     assert(storedVoiceMessage, "Stored voice message was not returned");
-    assert(decryptMessage(storedFirstMessage.translatedText) === "How are you?", "Stored translation was not English");
+    assert(decryptMessage(storedFirstMessage.translatedText) === "Hello", "Stored edited translation was not English");
+    assert(storedFirstMessage.editedAt, "Stored direct edit timestamp was not returned");
     assert(storedFirstMessage.reactions.some((reaction) => reaction.userId === bob.id && reaction.emoji === "👍"), "Stored reaction was not returned");
     assert(storedSecondMessage.replyToMessageId === firstMessage.id, "Stored reply target was not returned");
-    assert(decryptMessage(storedSecondMessage.replyPreviewText) === "Kaise ho?", "Stored reply preview was not returned");
+    assert(decryptMessage(storedSecondMessage.replyPreviewText) === "Namaste", "Stored reply preview was not returned");
     assert(
       decryptMessage(storedSecondMessage.translatedText) === "What are you doing?",
       "Stored Roman Hindi variant translation was not English"
@@ -431,6 +480,15 @@ async function run() {
       messageId: firstGroupMessage.id,
       emoji: "❤️"
     });
+    await editAndAssertGroupMessage({
+      editorSocket: aliceSocket,
+      receiverSocket: bobSocket,
+      editor: alice,
+      groupId: group.id,
+      messageId: firstGroupMessage.id,
+      text: "Namaste",
+      expectedTranslation: "Hello"
+    });
     const secondGroupMessage = await sendAndAssertGroupMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
@@ -439,8 +497,8 @@ async function run() {
       text: "kya kar rhe ho",
       expectedTranslation: "What are you doing?",
       replyToMessageId: firstGroupMessage.id,
-      replyPreviewText: "Kaise ho?",
-      expectedReplyPreview: "How are you?"
+      replyPreviewText: "Namaste",
+      expectedReplyPreview: "Hello"
     });
     const { messages: groupMessages } = await get(`/api/users/${bob.id}/groups/${group.id}/messages`, bobToken);
     const storedFirstGroupMessage = groupMessages.find((message) => message.id === firstGroupMessage.id);
@@ -448,16 +506,17 @@ async function run() {
     assert(storedFirstGroupMessage, "First stored group message was not returned");
     assert(storedSecondGroupMessage, "Second stored group message was not returned");
     assert(
-      decryptMessage(storedFirstGroupMessage.translatedText) === "How are you?",
-      "Stored group translation was not English"
+      decryptMessage(storedFirstGroupMessage.translatedText) === "Hello",
+      "Stored edited group translation was not English"
     );
+    assert(storedFirstGroupMessage.editedAt, "Stored group edit timestamp was not returned");
     assert(
       storedFirstGroupMessage.reactions.some((reaction) => reaction.userId === bob.id && reaction.emoji === "❤️"),
       "Stored group reaction was not returned"
     );
     assert(storedSecondGroupMessage.replyToMessageId === firstGroupMessage.id, "Stored group reply target was not returned");
     assert(
-      decryptMessage(storedSecondGroupMessage.replyPreviewText) === "How are you?",
+      decryptMessage(storedSecondGroupMessage.replyPreviewText) === "Hello",
       "Stored translated group reply preview was not returned"
     );
 

@@ -6,6 +6,7 @@ import {
   Mic,
   MicOff,
   Paperclip,
+  Pencil,
   Phone,
   PhoneOff,
   Plus,
@@ -183,6 +184,7 @@ export function App() {
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
   const [replyingTo, setReplyingTo] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
   const [call, setCall] = useState({
     status: "idle",
     type: "voice",
@@ -411,6 +413,32 @@ export function App() {
       );
     });
 
+    socket.on("message:update", (message) => {
+      const decryptedMessage = {
+        ...message,
+        originalText: decryptMaybe(message.originalText),
+        translatedText: decryptMaybe(message.translatedText),
+        replyPreviewText: decryptMaybe(message.replyPreviewText)
+      };
+
+      setMessages((current) =>
+        current.map((item) => (item.id === decryptedMessage.id ? { ...item, ...decryptedMessage } : item))
+      );
+      if (decryptedMessage.groupId) {
+        setGroups((current) =>
+          current.map((group) =>
+            group.lastMessage?.id === decryptedMessage.id ? { ...group, lastMessage: decryptedMessage } : group
+          )
+        );
+      } else {
+        setContacts((current) =>
+          current.map((contact) =>
+            contact.lastMessage?.id === decryptedMessage.id ? { ...contact, lastMessage: decryptedMessage } : contact
+          )
+        );
+      }
+    });
+
     socket.on("typing", ({ senderId, groupId, isTyping }) => {
       setTypingContactId(isTyping ? groupId || senderId : "");
     });
@@ -530,6 +558,7 @@ export function App() {
   useEffect(() => {
     if (!user || !activeChat || !authToken) return;
     setReplyingTo(null);
+    setEditingMessage(null);
 
     const loadConversation = isGroupChat
       ? getGroupConversation(user.id, activeChat.id, authToken)
@@ -571,10 +600,25 @@ export function App() {
   }
 
   function beginReply(message) {
+    setEditingMessage(null);
     setReplyingTo({
       id: message.id,
       text: messageTextForUser(message)
     });
+  }
+
+  function beginEdit(message) {
+    setReplyingTo(null);
+    setEditingMessage({
+      id: message.id,
+      text: message.originalText
+    });
+    setMessageText(message.originalText);
+  }
+
+  function cancelEdit() {
+    setEditingMessage(null);
+    setMessageText("");
   }
 
   function reactToMessage(message, emoji) {
@@ -744,6 +788,7 @@ export function App() {
     setMessages([]);
     setMessageText("");
     setReplyingTo(null);
+    setEditingMessage(null);
     setOtp("");
     setConfirmationResult(null);
     setProfileForm(demoUser);
@@ -760,6 +805,18 @@ export function App() {
       groupId: isGroupChat ? activeChat.id : undefined,
       isTyping: false
     });
+
+    if (editingMessage) {
+      socketRef.current?.emit(isGroupChat ? "group:message:edit" : "message:edit", {
+        groupId: isGroupChat ? activeChat.id : undefined,
+        messageId: editingMessage.id,
+        text: encryptMessage(messageText)
+      });
+      setMessageText("");
+      setEditingMessage(null);
+      return;
+    }
+
     socketRef.current?.emit(isGroupChat ? "group:message:send" : "message:send", {
       receiverId: isGroupChat ? undefined : activeChat.id,
       groupId: isGroupChat ? activeChat.id : undefined,
@@ -1616,6 +1673,11 @@ export function App() {
                     <button type="button" title="Reply" onClick={() => beginReply(message)}>
                       <Reply size={14} />
                     </button>
+                    {mine && (
+                      <button type="button" title="Edit" onClick={() => beginEdit(message)}>
+                        <Pencil size={14} />
+                      </button>
+                    )}
                     {["👍", "❤️", "😂"].map((emoji) => (
                       <button
                         className={myReaction?.emoji === emoji ? "selected" : ""}
@@ -1635,7 +1697,12 @@ export function App() {
                       ))}
                     </div>
                   )}
-                  {mine && <small className="message-status">{message.status === "read" ? "Read" : "Delivered"}</small>}
+                  {(message.editedAt || mine) && (
+                    <small className="message-status">
+                      {message.editedAt ? "Edited" : ""}
+                      {mine ? `${message.editedAt ? " · " : ""}${message.status === "read" ? "Read" : "Delivered"}` : ""}
+                    </small>
+                  )}
                 </article>
               );
             })}
@@ -1643,6 +1710,15 @@ export function App() {
           </div>
 
           <form className="composer" onSubmit={sendMessage}>
+            {editingMessage && (
+              <div className="composer-reply">
+                <Pencil size={15} />
+                <span>{editingMessage.text}</span>
+                <button type="button" title="Cancel edit" onClick={cancelEdit}>
+                  <X size={15} />
+                </button>
+              </div>
+            )}
             {replyingTo && (
               <div className="composer-reply">
                 <Reply size={15} />
