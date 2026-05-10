@@ -67,6 +67,20 @@ async function get(path, token) {
   return payload;
 }
 
+async function del(path, token) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(`${path} failed with ${response.status}: ${payload.error || "unknown error"}`);
+  }
+
+  return payload;
+}
+
 async function verifyDemoUser(phone) {
   const result = await post("/api/verify-otp", { code: "123456", phone });
   assert(result.verified, `Demo OTP was not verified for ${phone}`);
@@ -285,6 +299,13 @@ async function run() {
     assert(caption.senderName === alice.name, "Call caption sender name did not relay");
     assert(caption.originalText === "kya kar rhe ho", "Call caption original text did not relay");
     assert(caption.translatedText === "What are you doing?", "Call caption translation did not relay");
+
+    const deleteResult = await del(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
+    assert(deleteResult.deleted === true, "Delete conversation did not return deleted=true");
+    const { messages: messagesAfterDelete } = await get(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
+    assert(messagesAfterDelete.length === 0, "Deleted conversation is still visible to deleting user");
+    const { messages: aliceMessagesAfterBobDelete } = await get(`/api/users/${alice.id}/conversations/${bob.id}`, aliceToken);
+    assert(aliceMessagesAfterBobDelete.length === 3, "Delete-for-me removed messages for the other user");
 
     console.log("Local flow test passed: demo OTP, registration, contacts, Socket.IO messaging, and translation.");
   } finally {

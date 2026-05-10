@@ -51,6 +51,11 @@ function mapGroup(row) {
   };
 }
 
+function formatMySqlDateTime(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
 export function createMySqlRepository() {
   const pool = mysql.createPool({
     host: process.env.MYSQL_HOST || "localhost",
@@ -348,7 +353,7 @@ export function createMySqlRepository() {
 
     async saveMessage(message) {
       const createdAt = message.createdAt ? new Date(message.createdAt) : new Date();
-      const formattedCreatedAt = `${createdAt.toISOString().slice(0, 19).replace("T", " ")}`;
+      const formattedCreatedAt = formatMySqlDateTime(createdAt);
 
       await pool.query(
         `INSERT INTO messages
@@ -465,7 +470,7 @@ export function createMySqlRepository() {
 
     async saveGroupMessage(message) {
       const createdAt = message.createdAt ? new Date(message.createdAt) : new Date();
-      const formattedCreatedAt = `${createdAt.toISOString().slice(0, 19).replace("T", " ")}`;
+      const formattedCreatedAt = formatMySqlDateTime(createdAt);
 
       await pool.query(
         `INSERT INTO group_messages
@@ -501,7 +506,7 @@ export function createMySqlRepository() {
 
     async markGroupRead(userId, groupId) {
       const readAt = new Date();
-      const formattedReadAt = readAt.toISOString().slice(0, 19).replace("T", " ");
+      const formattedReadAt = formatMySqlDateTime(readAt);
       const [rows] = await pool.query(
         `SELECT id
          FROM group_messages
@@ -556,7 +561,7 @@ export function createMySqlRepository() {
 
     async markConversationRead(userId, contactId) {
       const readAt = new Date();
-      const formattedReadAt = readAt.toISOString().slice(0, 19).replace("T", " ");
+      const formattedReadAt = formatMySqlDateTime(readAt);
       const [rows] = await pool.query(
         `SELECT id
          FROM messages
@@ -585,7 +590,7 @@ export function createMySqlRepository() {
         `INSERT INTO conversation_deletions (user_id, contact_id, deleted_at)
          VALUES (:userId, :contactId, :deletedAt)
          ON DUPLICATE KEY UPDATE deleted_at = VALUES(deleted_at)`,
-        { userId, contactId, deletedAt: new Date().toISOString() }
+        { userId, contactId, deletedAt: formatMySqlDateTime() }
       );
       return { deleted: true };
     },
