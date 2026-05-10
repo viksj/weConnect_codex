@@ -162,7 +162,10 @@ async function sendAndAssertMessage({
   text,
   expectedTranslation,
   replyToMessageId,
-  replyPreviewText
+  replyPreviewText,
+  expectedReplyPreview = replyPreviewText,
+  expectedSourceLanguage = "hi",
+  expectedTargetLanguage = "en"
 }) {
   const incomingMessage = waitForMessage(receiverSocket);
   senderSocket.emit("message:send", {
@@ -175,8 +178,14 @@ async function sendAndAssertMessage({
   const message = await incomingMessage;
   assert(message.senderId === sender.id, `Message sender is not ${sender.name}`);
   assert(message.receiverId === receiver.id, `Message receiver is not ${receiver.name}`);
-  assert(message.sourceLanguage === "hi", `Expected source language hi, got ${message.sourceLanguage}`);
-  assert(message.targetLanguage === "en", `Expected target language en, got ${message.targetLanguage}`);
+  assert(
+    message.sourceLanguage === expectedSourceLanguage,
+    `Expected source language ${expectedSourceLanguage}, got ${message.sourceLanguage}`
+  );
+  assert(
+    message.targetLanguage === expectedTargetLanguage,
+    `Expected target language ${expectedTargetLanguage}, got ${message.targetLanguage}`
+  );
   assert(decryptMessage(message.originalText) === text, "Original message did not round-trip");
   assert(
     decryptMessage(message.translatedText) === expectedTranslation,
@@ -184,7 +193,10 @@ async function sendAndAssertMessage({
   );
   if (replyToMessageId) {
     assert(message.replyToMessageId === replyToMessageId, "Reply message id did not round-trip");
-    assert(decryptMessage(message.replyPreviewText) === replyPreviewText, "Reply preview text did not round-trip");
+    assert(
+      decryptMessage(message.replyPreviewText) === expectedReplyPreview,
+      `Expected reply preview "${expectedReplyPreview}", got "${decryptMessage(message.replyPreviewText)}"`
+    );
   }
 
   return message;
@@ -412,6 +424,23 @@ async function run() {
       text: "Namaste",
       expectedTranslation: "Hello"
     });
+    const firstReplyFromBob = await sendAndAssertMessage({
+      senderSocket: bobSocket,
+      receiverSocket: aliceSocket,
+      sender: bob,
+      receiver: alice,
+      text: "hello",
+      expectedTranslation: "नमस्ते",
+      replyToMessageId: firstMessage.id,
+      replyPreviewText: "Hello",
+      expectedReplyPreview: "नमस्ते",
+      expectedSourceLanguage: "en",
+      expectedTargetLanguage: "hi"
+    });
+    assert(
+      decryptMessage(firstReplyFromBob.replyPreviewText) === "नमस्ते",
+      "Direct reply preview was not translated for the receiver"
+    );
     const secondMessage = await sendAndAssertMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
@@ -420,7 +449,8 @@ async function run() {
       text: "kya kar rhe ho",
       expectedTranslation: "What are you doing?",
       replyToMessageId: firstMessage.id,
-      replyPreviewText: "Namaste"
+      replyPreviewText: "Namaste",
+      expectedReplyPreview: "Hello"
     });
     const voiceMessage = await sendAndAssertVoiceMessage({
       senderSocket: aliceSocket,
@@ -432,7 +462,7 @@ async function run() {
     });
 
     const { messages } = await get(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
-    assert(messages.length === 3, `Expected three stored conversation messages, got ${messages.length}`);
+    assert(messages.length === 4, `Expected four stored conversation messages, got ${messages.length}`);
     const storedFirstMessage = messages.find((message) => message.id === firstMessage.id);
     const storedSecondMessage = messages.find((message) => message.id === secondMessage.id);
     const storedVoiceMessage = messages.find((message) => message.id === voiceMessage.id);
@@ -547,7 +577,7 @@ async function run() {
     assert(!aliceContactAfterDelete.lastMessage, "Deleted conversation still shows a last message preview");
     assert(Number(aliceContactAfterDelete.unreadCount || 0) === 0, "Deleted conversation still shows unread messages");
     const { messages: aliceMessagesAfterBobDelete } = await get(`/api/users/${alice.id}/conversations/${bob.id}`, aliceToken);
-    assert(aliceMessagesAfterBobDelete.length === 3, "Delete-for-me removed messages for the other user");
+    assert(aliceMessagesAfterBobDelete.length === 4, "Delete-for-me removed messages for the other user");
 
     console.log("Local flow test passed: demo OTP, registration, contacts, Socket.IO messaging, and translation.");
   } finally {
