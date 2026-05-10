@@ -42,9 +42,48 @@ button:disabled {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 1fr;
   gap: 16px;
   padding: 18px;
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.auth-stage {
+  width: min(960px, 100%);
+  display: grid;
+  gap: 18px;
+}
+
+.auth-brand {
+  justify-content: center;
+  text-align: left;
+}
+
+.auth-workflow {
+  grid-template-columns: repeat(5, minmax(96px, 1fr));
+}
+
+.auth-card-centered {
+  width: min(360px, 100%);
+  justify-self: center;
+}
+
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-weight: 800;
+  margin-top: 10px;
+}
+
+.auth-toast {
+  justify-self: center;
 }
 
 .product-panel,

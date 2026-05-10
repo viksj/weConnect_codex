@@ -1,10 +1,8 @@
 import {
   BadgeCheck,
   Bell,
-  Bot,
   CheckCheck,
   Languages,
-  Lock,
   Mic,
   MicOff,
   Paperclip,
@@ -129,7 +127,7 @@ function fileToDataUrl(file) {
 }
 
 export function App() {
-  const [step, setStep] = useState("register");
+  const [step, setStep] = useState("phone");
   const [form, setForm] = useState(demoUser);
   const [otp, setOtp] = useState("");
   const [confirmationResult, setConfirmationResult] = useState(null);
@@ -554,6 +552,10 @@ export function App() {
     setIsSendingOtp(true);
 
     try {
+      if (!form.emailOrPhone.trim()) {
+        throw new Error("Missing phone number");
+      }
+
       if (!isFirebaseConfigured || !firebaseAuth) {
         setConfirmationResult({ demo: true });
         setOtp("");
@@ -576,7 +578,9 @@ export function App() {
       recaptchaVerifierRef.current?.clear();
       recaptchaVerifierRef.current = null;
       setError(
-        "OTP send nahi ho paaya. Phone number +91 format me hona chahiye aur Firebase Phone Auth enabled hona chahiye."
+        caughtError.message === "Missing phone number"
+          ? "Phone number required hai."
+          : "OTP send nahi ho paaya. Phone number +91 format me hona chahiye aur Firebase Phone Auth enabled hona chahiye."
       );
     } finally {
       setIsSendingOtp(false);
@@ -613,14 +617,9 @@ export function App() {
         phoneNumber = firebaseCredential.user.phoneNumber || form.emailOrPhone;
       }
 
-      const result = await registerUser({
-        ...form,
-        emailOrPhone: phoneNumber
-      }, token);
       setAuthToken(token);
-      setUser(result.user);
-      setProfileForm(result.user);
-      setStep("chat");
+      setForm((current) => ({ ...current, emailOrPhone: phoneNumber }));
+      setStep("profile");
     } catch (caughtError) {
       console.error("OTP verify failed:", caughtError);
       const message =
@@ -632,6 +631,36 @@ export function App() {
       setError(message);
     } finally {
       setIsVerifyingOtp(false);
+    }
+  }
+
+  async function handleCompleteProfile(event) {
+    event.preventDefault();
+    setError("");
+
+    if (!authToken) {
+      setError("OTP verify pehle complete karein.");
+      setStep("phone");
+      return;
+    }
+
+    if (!form.name.trim()) {
+      setError("Profile ke liye naam required hai.");
+      return;
+    }
+
+    try {
+      const result = await registerUser({
+        name: form.name.trim(),
+        emailOrPhone: form.emailOrPhone,
+        motherTongue: form.motherTongue
+      }, authToken);
+      setUser(result.user);
+      setProfileForm(result.user);
+      setStep("chat");
+    } catch (caughtError) {
+      console.error("Profile setup failed:", caughtError);
+      setError("Profile save nahi ho paaya.");
     }
   }
 
@@ -1067,88 +1096,106 @@ export function App() {
     recognition.start();
   }
 
+  if (step !== "chat") {
+    return (
+      <main className="auth-shell">
+        <section className="auth-stage">
+          <div className="brand-row auth-brand">
+            <div className="brand-mark">
+              <Languages size={26} />
+            </div>
+            <div>
+              <p className="eyebrow">WeConnect</p>
+              <h1>Sign in with your phone number.</h1>
+            </div>
+          </div>
+
+          <div className="workflow-strip auth-workflow">
+            <WorkflowItem icon={<Phone />} label="Phone" active={step === "phone"} />
+            <WorkflowItem icon={<BadgeCheck />} label="Verify OTP" active={step === "verify"} />
+            <WorkflowItem icon={<UserRound />} label="Profile" active={step === "profile"} />
+            <WorkflowItem icon={<Languages />} label="My Language" active={step === "profile"} />
+            <WorkflowItem icon={<CheckCheck />} label="Chats" />
+          </div>
+
+          {step === "phone" && (
+            <form className="auth-card auth-card-centered" onSubmit={handleRegister}>
+              <h2>Enter phone number</h2>
+              <p className="muted">We will send an OTP to verify your number.</p>
+              <label>
+                Phone number
+                <input
+                  placeholder="+91 98765 43210"
+                  value={form.emailOrPhone}
+                  onChange={(event) => setForm({ ...form, emailOrPhone: event.target.value })}
+                />
+              </label>
+              <div id="recaptcha-container" />
+              <button className="primary-button" type="submit" disabled={isSendingOtp}>
+                {isSendingOtp ? "Sending OTP..." : "Send OTP"}
+              </button>
+            </form>
+          )}
+
+          {step === "verify" && (
+            <form className="auth-card auth-card-centered compact" onSubmit={handleVerify}>
+              <Shield className="hero-icon" size={44} />
+              <h2>Verify your number</h2>
+              <p className="muted">
+                {confirmationResult?.demo
+                  ? `Local demo mode me ${form.emailOrPhone} ke liye OTP 123456 use karein.`
+                  : `Firebase ne ${form.emailOrPhone} par SMS OTP send kiya hai.`}
+              </p>
+              <input
+                className="otp-input"
+                inputMode="numeric"
+                placeholder="123456"
+                value={otp}
+                onChange={(event) => setOtp(event.target.value)}
+                maxLength={6}
+              />
+              <button className="primary-button" type="submit" disabled={isVerifyingOtp || otp.length < 6}>
+                {isVerifyingOtp ? "Verifying..." : "Verify"}
+              </button>
+              <button className="text-button" type="button" onClick={() => setStep("phone")}>
+                Change phone number
+              </button>
+            </form>
+          )}
+
+          {step === "profile" && (
+            <form className="auth-card auth-card-centered" onSubmit={handleCompleteProfile}>
+              <h2>Create profile</h2>
+              <p className="muted">This is how people will see you in chats.</p>
+              <label>
+                Name
+                <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              </label>
+              <label>
+                My Language
+                <select
+                  value={form.motherTongue}
+                  onChange={(event) => setForm({ ...form, motherTongue: event.target.value })}
+                >
+                  {languages.map((language) => (
+                    <option key={language.code} value={language.code}>
+                      {language.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="primary-button" type="submit">Open chats</button>
+            </form>
+          )}
+
+          {error && <p className="toast auth-toast">{error}</p>}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
-      <section className="product-panel">
-        <div className="brand-row">
-          <div className="brand-mark">
-            <Languages size={26} />
-          </div>
-          <div>
-            <p className="eyebrow">Real-time AI translation</p>
-            <h1>Chat aur calls, har language mein natural.</h1>
-          </div>
-        </div>
-
-        <div className="workflow-strip">
-          <WorkflowItem icon={<UserRound />} label="Register" active={step === "register"} />
-          <WorkflowItem icon={<BadgeCheck />} label="Verify OTP" active={step === "verify"} />
-          <WorkflowItem icon={<Lock />} label="Encrypt" />
-          <WorkflowItem icon={<Bot />} label="Translate" />
-          <WorkflowItem icon={<CheckCheck />} label="Deliver" active={step === "chat"} />
-        </div>
-
-        {step === "register" && (
-          <form className="auth-card" onSubmit={handleRegister}>
-            <h2>Create account</h2>
-            <label>
-              Name
-              <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-            </label>
-            <label>
-              Phone number
-              <input
-                placeholder="+91 98765 43210"
-                value={form.emailOrPhone}
-                onChange={(event) => setForm({ ...form, emailOrPhone: event.target.value })}
-              />
-            </label>
-            <label>
-              My Language
-              <select
-                value={form.motherTongue}
-                onChange={(event) => setForm({ ...form, motherTongue: event.target.value })}
-              >
-                {languages.map((language) => (
-                  <option key={language.code} value={language.code}>
-                    {language.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div id="recaptcha-container" />
-            <button className="primary-button" type="submit" disabled={isSendingOtp}>
-              {isSendingOtp ? "Sending OTP..." : "Send OTP"}
-            </button>
-          </form>
-        )}
-
-        {step === "verify" && (
-          <form className="auth-card compact" onSubmit={handleVerify}>
-            <Shield className="hero-icon" size={44} />
-            <h2>Verify your number</h2>
-            <p className="muted">
-              {confirmationResult?.demo
-                ? `Local demo mode me ${form.emailOrPhone} ke liye OTP 123456 use karein.`
-                : `Firebase ne ${form.emailOrPhone} par SMS OTP send kiya hai.`}
-            </p>
-            <input
-              className="otp-input"
-              inputMode="numeric"
-              placeholder="123456"
-              value={otp}
-              onChange={(event) => setOtp(event.target.value)}
-              maxLength={6}
-            />
-            <button className="primary-button" type="submit" disabled={isVerifyingOtp || otp.length < 6}>
-              {isVerifyingOtp ? "Verifying..." : "Verify"}
-            </button>
-          </form>
-        )}
-
-        {error && <p className="toast">{error}</p>}
-      </section>
-
       <section className="chat-panel">
         <aside className="contact-list">
           <div className="toolbar">
