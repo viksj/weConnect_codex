@@ -128,6 +128,16 @@ cd mobile && npm start
 - **Server API**: http://localhost:4000
 - **Health Check**: http://localhost:4000/health
 
+### Local Flow Test
+
+Run the local integration test without touching MySQL:
+
+```bash
+TEST_PORT=4025 node scripts/local-flow-test.mjs
+```
+
+It starts the server with `DB_PROVIDER=memory`, verifies demo OTP login, registers two users, adds a contact, sends an encrypted Socket.IO message, and checks the translated stored message.
+
 ## Project Structure
 
 ```
