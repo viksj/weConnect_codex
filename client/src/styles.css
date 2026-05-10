@@ -573,14 +573,58 @@ select:focus {
   box-shadow: 0 8px 20px rgba(23, 43, 77, 0.06);
 }
 
-.message p {
+.message-main {
   margin: 0 0 6px;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
-.message small {
+.message-alt {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(23, 43, 77, 0.1);
   color: var(--muted);
+  font-size: 0.82rem;
   line-height: 1.4;
+}
+
+.message-alt span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.message-alt strong {
+  color: #263b55;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.message-meta span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.message-meta span:not(:last-child)::after {
+  content: "·";
+  margin-left: 6px;
+}
+
+.message-meta .translation-warning {
+  color: #b42318;
+  font-weight: 800;
 }
 
 .message-media {

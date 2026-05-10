@@ -106,6 +106,27 @@ function waitForMessage(socket) {
   });
 }
 
+async function sendAndAssertMessage({ senderSocket, receiverSocket, sender, receiver, text, expectedTranslation }) {
+  const incomingMessage = waitForMessage(receiverSocket);
+  senderSocket.emit("message:send", {
+    receiverId: receiver.id,
+    text: encryptMessage(text)
+  });
+
+  const message = await incomingMessage;
+  assert(message.senderId === sender.id, `Message sender is not ${sender.name}`);
+  assert(message.receiverId === receiver.id, `Message receiver is not ${receiver.name}`);
+  assert(message.sourceLanguage === "hi", `Expected source language hi, got ${message.sourceLanguage}`);
+  assert(message.targetLanguage === "en", `Expected target language en, got ${message.targetLanguage}`);
+  assert(decryptMessage(message.originalText) === text, "Original message did not round-trip");
+  assert(
+    decryptMessage(message.translatedText) === expectedTranslation,
+    `Expected translation "${expectedTranslation}", got "${decryptMessage(message.translatedText)}"`
+  );
+
+  return message;
+}
+
 function startServer() {
   return spawn("node", ["server/src/index.js"], {
     cwd: projectRoot,
@@ -169,23 +190,30 @@ async function run() {
     aliceSocket = await connectSocket(alice, aliceToken);
     bobSocket = await connectSocket(bob, bobToken);
 
-    const incomingMessage = waitForMessage(bobSocket);
-    aliceSocket.emit("message:send", {
-      receiverId: bob.id,
-      text: encryptMessage("Kaise ho?")
+    await sendAndAssertMessage({
+      senderSocket: aliceSocket,
+      receiverSocket: bobSocket,
+      sender: alice,
+      receiver: bob,
+      text: "Kaise ho?",
+      expectedTranslation: "How are you?"
+    });
+    await sendAndAssertMessage({
+      senderSocket: aliceSocket,
+      receiverSocket: bobSocket,
+      sender: alice,
+      receiver: bob,
+      text: "kya kar rhe ho",
+      expectedTranslation: "What are you doing?"
     });
 
-    const message = await incomingMessage;
-    assert(message.senderId === alice.id, "Message sender is not Alice");
-    assert(message.receiverId === bob.id, "Message receiver is not Bob");
-    assert(message.sourceLanguage === "hi", `Expected source language hi, got ${message.sourceLanguage}`);
-    assert(message.targetLanguage === "en", `Expected target language en, got ${message.targetLanguage}`);
-    assert(decryptMessage(message.originalText) === "Kaise ho?", "Original message did not round-trip");
-    assert(decryptMessage(message.translatedText) === "How are you?", "Translated message was not English");
-
     const { messages } = await get(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
-    assert(messages.length === 1, `Expected one stored conversation message, got ${messages.length}`);
+    assert(messages.length === 2, `Expected two stored conversation messages, got ${messages.length}`);
     assert(decryptMessage(messages[0].translatedText) === "How are you?", "Stored translation was not English");
+    assert(
+      decryptMessage(messages[1].translatedText) === "What are you doing?",
+      "Stored Roman Hindi variant translation was not English"
+    );
 
     console.log("Local flow test passed: demo OTP, registration, contacts, Socket.IO messaging, and translation.");
   } finally {
