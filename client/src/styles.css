@@ -601,7 +601,7 @@ select:focus {
 
 .message-area {
   overflow-y: auto;
-  padding: 22px;
+  padding: 18px 22px;
   background:
     linear-gradient(rgba(245, 248, 252, 0.84), rgba(245, 248, 252, 0.84)),
     radial-gradient(circle at top left, rgba(17, 154, 97, 0.16), transparent 32%),
@@ -623,17 +623,21 @@ select:focus {
 }
 
 .message {
-  max-width: min(520px, 82%);
-  margin-bottom: 12px;
+  position: relative;
+  width: fit-content;
+  min-width: 120px;
+  max-width: min(420px, 72%);
+  margin-bottom: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 8px 20px rgba(23, 43, 77, 0.06);
+  padding: 9px 34px 8px 10px;
+  box-shadow: 0 4px 12px rgba(23, 43, 77, 0.05);
 }
 
 .message-main {
-  margin: 0 0 6px;
+  margin: 0;
   font-weight: 700;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
@@ -660,9 +664,9 @@ select:focus {
 
 .message-status {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   line-height: 1.4;
   text-align: right;
 }
@@ -695,20 +699,85 @@ select:focus {
   margin-left: auto;
   background: #dcf6df;
   border-color: #bfeac7;
+  border-top-right-radius: 4px;
 }
 
 .message.theirs {
   background: #fff;
+  border-top-left-radius: 4px;
 }
 
-.message-actions {
+.message-menu-trigger {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.72;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.message:hover .message-menu-trigger,
+.message-menu-trigger:focus-visible,
+.message-menu-trigger[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.message-menu-trigger:hover {
+  background: rgba(20, 32, 51, 0.08);
+}
+
+.message-menu {
+  position: absolute;
+  top: 32px;
+  right: 8px;
+  z-index: 5;
+  min-width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 34px rgba(23, 43, 77, 0.18);
+  padding: 6px;
+}
+
+.message.theirs .message-menu {
+  right: auto;
+  left: 8px;
+}
+
+.message-menu > button {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.message-menu > button:hover {
+  background: var(--soft);
+}
+
+.message-reaction-menu {
   display: flex;
   gap: 6px;
-  align-items: center;
-  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 6px;
 }
 
-.message-actions button,
+.message-reaction-menu button,
 .composer-reply button {
   width: 28px;
   height: 28px;
@@ -718,7 +787,7 @@ select:focus {
   line-height: 1;
 }
 
-.message-actions button.selected {
+.message-reaction-menu button.selected {
   background: #dbeafe;
   border-color: #93c5fd;
 }
@@ -727,14 +796,14 @@ select:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 7px;
+  margin-top: 5px;
 }
 
 .reaction-strip span {
   display: inline-grid;
   place-items: center;
   min-width: 26px;
-  height: 24px;
+  height: 22px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.78);

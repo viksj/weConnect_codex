@@ -5,6 +5,7 @@ import {
   Languages,
   Mic,
   MicOff,
+  MoreVertical,
   Paperclip,
   Pencil,
   Phone,
@@ -185,6 +186,7 @@ export function App() {
   const [messageText, setMessageText] = useState("");
   const [replyingTo, setReplyingTo] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
+  const [openMessageMenuId, setOpenMessageMenuId] = useState("");
   const [call, setCall] = useState({
     status: "idle",
     type: "voice",
@@ -559,6 +561,7 @@ export function App() {
     if (!user || !activeChat || !authToken) return;
     setReplyingTo(null);
     setEditingMessage(null);
+    setOpenMessageMenuId("");
 
     const loadConversation = isGroupChat
       ? getGroupConversation(user.id, activeChat.id, authToken)
@@ -601,6 +604,7 @@ export function App() {
 
   function beginReply(message) {
     setEditingMessage(null);
+    setOpenMessageMenuId("");
     setReplyingTo({
       id: message.id,
       text: messageTextForUser(message)
@@ -609,6 +613,7 @@ export function App() {
 
   function beginEdit(message) {
     setReplyingTo(null);
+    setOpenMessageMenuId("");
     setEditingMessage({
       id: message.id,
       text: message.originalText
@@ -623,6 +628,7 @@ export function App() {
 
   function reactToMessage(message, emoji) {
     if (!socketRef.current) return;
+    setOpenMessageMenuId("");
     const existingReaction = (message.reactions || []).find((reaction) => reaction.userId === user?.id);
     socketRef.current.emit(isGroupChat ? "group:message:react" : "message:react", {
       groupId: isGroupChat ? activeChat.id : undefined,
@@ -789,6 +795,7 @@ export function App() {
     setMessageText("");
     setReplyingTo(null);
     setEditingMessage(null);
+    setOpenMessageMenuId("");
     setOtp("");
     setConfirmationResult(null);
     setProfileForm(demoUser);
@@ -1658,9 +1665,46 @@ export function App() {
               const mine = message.senderId === user?.id;
               const textToShow = messageTextForUser(message);
               const myReaction = (message.reactions || []).find((reaction) => reaction.userId === user?.id);
+              const menuOpen = openMessageMenuId === message.id;
 
               return (
                 <article className={`message ${mine ? "mine" : "theirs"}`} key={message.id}>
+                  <button
+                    className="message-menu-trigger"
+                    type="button"
+                    title="Message options"
+                    aria-expanded={menuOpen}
+                    onClick={() => setOpenMessageMenuId((current) => (current === message.id ? "" : message.id))}
+                  >
+                    <MoreVertical size={16} />
+                  </button>
+                  {menuOpen && (
+                    <div className="message-menu">
+                      <button type="button" onClick={() => beginReply(message)}>
+                        <Reply size={15} />
+                        <span>Reply</span>
+                      </button>
+                      {mine && (
+                        <button type="button" onClick={() => beginEdit(message)}>
+                          <Pencil size={15} />
+                          <span>Edit</span>
+                        </button>
+                      )}
+                      <div className="message-reaction-menu" aria-label="Reactions">
+                        {["👍", "❤️", "😂"].map((emoji) => (
+                          <button
+                            className={myReaction?.emoji === emoji ? "selected" : ""}
+                            key={emoji}
+                            type="button"
+                            title={`React ${emoji}`}
+                            onClick={() => reactToMessage(message, emoji)}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {message.replyPreviewText && (
                     <div className="reply-preview">
                       <Reply size={13} />
@@ -1669,27 +1713,6 @@ export function App() {
                   )}
                   <p className="message-main">{textToShow}</p>
                   <MessageMedia message={message} />
-                  <div className="message-actions" aria-label="Message actions">
-                    <button type="button" title="Reply" onClick={() => beginReply(message)}>
-                      <Reply size={14} />
-                    </button>
-                    {mine && (
-                      <button type="button" title="Edit" onClick={() => beginEdit(message)}>
-                        <Pencil size={14} />
-                      </button>
-                    )}
-                    {["👍", "❤️", "😂"].map((emoji) => (
-                      <button
-                        className={myReaction?.emoji === emoji ? "selected" : ""}
-                        key={emoji}
-                        type="button"
-                        title={`React ${emoji}`}
-                        onClick={() => reactToMessage(message, emoji)}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
                   {message.reactions?.length > 0 && (
                     <div className="reaction-strip">
                       {message.reactions.map((reaction) => (
