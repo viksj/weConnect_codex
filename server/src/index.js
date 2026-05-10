@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 import { v4 as uuid } from "uuid";
 import { createDatabase } from "./db/index.js";
 import { createDemoAuthToken, firebaseAdminAuth, verifyFirebaseToken } from "./firebaseAdmin.js";
-import { applyScriptPreference, detectLanguage, detectScriptPreference, translateText } from "./translationService.js";
+import { applyScriptPreference, detectLanguage, translateText } from "./translationService.js";
 import { encryptMessage, decryptMessage } from "./encryptionService.js";
 
 const app = express();
@@ -153,15 +153,13 @@ async function formatGroupMessageForUser(message, user) {
   const translatedText = applyScriptPreference(
     await translateText(originalText, message.sourceLanguage, user.motherTongue),
     user.motherTongue,
-    user.scriptPreference,
-    message.sourceScript
+    user.scriptPreference
   );
   const replyPreviewText = message.replyPreviewText
     ? applyScriptPreference(
         await translateText(decryptMessage(message.replyPreviewText), message.sourceLanguage, user.motherTongue),
         user.motherTongue,
-        user.scriptPreference,
-        message.sourceScript
+        user.scriptPreference
       )
     : "";
 
@@ -186,8 +184,7 @@ async function formatDirectMessageForUser(message, user) {
           isSender ? message.sourceLanguage : user.motherTongue
         ),
         isSender ? message.sourceLanguage : user.motherTongue,
-        user.scriptPreference,
-        message.sourceScript
+        user.scriptPreference
       )
     : "";
 
@@ -532,12 +529,10 @@ io.on("connection", (socket) => {
     const decryptedText = text?.trim() ? decryptMessage(text) : mediaName || "Attachment";
 
     const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
-    const sourceScript = detectScriptPreference(decryptedText);
     const translatedText = applyScriptPreference(
       await translateText(decryptedText, sourceLanguage, receiver.motherTongue),
       receiver.motherTongue,
-      receiver.scriptPreference,
-      sourceScript
+      receiver.scriptPreference
     );
     await database.addContact(sender.id, receiverId);
     await database.addContact(receiverId, sender.id);
@@ -548,7 +543,6 @@ io.on("connection", (socket) => {
       originalText: encryptMessage(decryptedText.trim()),
       translatedText: encryptMessage(translatedText),
       sourceLanguage,
-      sourceScript,
       targetLanguage: receiver.motherTongue,
       messageType,
       mediaUrl,
@@ -597,18 +591,15 @@ io.on("connection", (socket) => {
     if (!decryptedText) return;
 
     const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
-    const sourceScript = detectScriptPreference(decryptedText);
     const translatedText = applyScriptPreference(
       await translateText(decryptedText, sourceLanguage, receiver.motherTongue),
       receiver.motherTongue,
-      receiver.scriptPreference,
-      sourceScript
+      receiver.scriptPreference
     );
     const updatedMessage = await database.updateMessageContent?.(messageId, {
       originalText: encryptMessage(decryptedText),
       translatedText: encryptMessage(translatedText),
       sourceLanguage,
-      sourceScript,
       targetLanguage: receiver.motherTongue,
       editedAt: new Date().toISOString()
     });
@@ -636,14 +627,12 @@ io.on("connection", (socket) => {
 
     const decryptedText = text?.trim() ? decryptMessage(text) : mediaName || "Attachment";
     const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
-    const sourceScript = detectScriptPreference(decryptedText);
     const message = await database.saveGroupMessage({
       id: uuid(),
       groupId,
       senderId: sender.id,
       originalText: encryptMessage(decryptedText.trim()),
       sourceLanguage,
-      sourceScript,
       messageType,
       mediaUrl,
       mediaName,
@@ -701,11 +690,9 @@ io.on("connection", (socket) => {
     if (!decryptedText) return;
 
     const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
-    const sourceScript = detectScriptPreference(decryptedText);
     const updatedMessage = await database.updateGroupMessageContent?.(messageId, {
       originalText: encryptMessage(decryptedText),
       sourceLanguage,
-      sourceScript,
       editedAt: new Date().toISOString()
     });
     if (!updatedMessage) return;

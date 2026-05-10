@@ -12,7 +12,7 @@ function mapUser(row) {
     firebaseUid: row.firebase_uid,
     motherTongue: row.mother_tongue,
     understands: row.understands,
-    scriptPreference: row.script_preference || "auto",
+    scriptPreference: row.script_preference || "native",
     avatar: row.avatar
   };
 }
@@ -34,7 +34,6 @@ function mapMessage(row) {
     originalText: row.original_text,
     translatedText: row.translated_text,
     sourceLanguage: row.source_language,
-    sourceScript: row.source_script || "native",
     targetLanguage: row.target_language,
     messageType: row.message_type || "text",
     mediaUrl: row.media_url || null,
@@ -89,7 +88,7 @@ export function createMySqlRepository() {
         firebase_uid VARCHAR(160) NULL UNIQUE,
         mother_tongue VARCHAR(16) NOT NULL DEFAULT 'hi',
         understands VARCHAR(16) NOT NULL DEFAULT 'en',
-        script_preference VARCHAR(16) NOT NULL DEFAULT 'auto',
+        script_preference VARCHAR(16) NOT NULL DEFAULT 'native',
         avatar VARCHAR(8) NOT NULL DEFAULT 'U',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -116,7 +115,7 @@ export function createMySqlRepository() {
     await pool.query("ALTER TABLE messages ADD COLUMN read_at DATETIME(3) NULL").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
-    await pool.query("ALTER TABLE users ADD COLUMN script_preference VARCHAR(16) NOT NULL DEFAULT 'auto'").catch((error) => {
+    await pool.query("ALTER TABLE users ADD COLUMN script_preference VARCHAR(16) NOT NULL DEFAULT 'native'").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
     await pool.query("ALTER TABLE messages ADD COLUMN message_type VARCHAR(32) NOT NULL DEFAULT 'text'").catch((error) => {
@@ -141,9 +140,6 @@ export function createMySqlRepository() {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
     await pool.query("ALTER TABLE messages ADD COLUMN edited_at DATETIME(3) NULL").catch((error) => {
-      if (error.code !== "ER_DUP_FIELDNAME") throw error;
-    });
-    await pool.query("ALTER TABLE messages ADD COLUMN source_script VARCHAR(16) NOT NULL DEFAULT 'native'").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
 
@@ -236,9 +232,6 @@ export function createMySqlRepository() {
     await pool.query("ALTER TABLE group_messages ADD COLUMN edited_at DATETIME(3) NULL").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
-    await pool.query("ALTER TABLE group_messages ADD COLUMN source_script VARCHAR(16) NOT NULL DEFAULT 'native'").catch((error) => {
-      if (error.code !== "ER_DUP_FIELDNAME") throw error;
-    });
   }
 
   async function seedDemoUsers() {
@@ -278,7 +271,7 @@ export function createMySqlRepository() {
         firebaseUid: payload.firebaseUid || existingUser?.firebaseUid || null,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
-        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "auto",
+        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 
@@ -326,7 +319,7 @@ export function createMySqlRepository() {
         name: payload.name,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
-        scriptPreference: payload.scriptPreference || "auto",
+        scriptPreference: payload.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 
@@ -424,9 +417,9 @@ export function createMySqlRepository() {
 
       await pool.query(
         `INSERT INTO messages
-          (id, sender_id, receiver_id, original_text, translated_text, source_language, source_script, target_language, message_type, media_url, media_name, media_mime, reply_to_message_id, reply_preview_text, reactions_json, status, created_at)
+          (id, sender_id, receiver_id, original_text, translated_text, source_language, target_language, message_type, media_url, media_name, media_mime, reply_to_message_id, reply_preview_text, reactions_json, status, created_at)
          VALUES
-          (:id, :senderId, :receiverId, :originalText, :translatedText, :sourceLanguage, :sourceScript, :targetLanguage, :messageType, :mediaUrl, :mediaName, :mediaMime, :replyToMessageId, :replyPreviewText, :reactionsJson, :status, :createdAt)`,
+          (:id, :senderId, :receiverId, :originalText, :translatedText, :sourceLanguage, :targetLanguage, :messageType, :mediaUrl, :mediaName, :mediaMime, :replyToMessageId, :replyPreviewText, :reactionsJson, :status, :createdAt)`,
         {
           ...message,
           messageType: message.messageType || "text",
@@ -435,7 +428,6 @@ export function createMySqlRepository() {
           mediaMime: message.mediaMime || null,
           replyToMessageId: message.replyToMessageId || null,
           replyPreviewText: message.replyPreviewText || null,
-          sourceScript: message.sourceScript || "native",
           reactionsJson: JSON.stringify(message.reactions || []),
           createdAt: formattedCreatedAt
         }
@@ -477,7 +469,6 @@ export function createMySqlRepository() {
          SET original_text = :originalText,
              translated_text = :translatedText,
              source_language = :sourceLanguage,
-             source_script = :sourceScript,
              target_language = :targetLanguage,
              edited_at = :editedAt
          WHERE id = :messageId`,
@@ -486,7 +477,6 @@ export function createMySqlRepository() {
           originalText: payload.originalText,
           translatedText: payload.translatedText,
           sourceLanguage: payload.sourceLanguage,
-          sourceScript: payload.sourceScript || "native",
           targetLanguage: payload.targetLanguage,
           editedAt: formattedEditedAt
         }
@@ -595,9 +585,9 @@ export function createMySqlRepository() {
 
       await pool.query(
         `INSERT INTO group_messages
-          (id, group_id, sender_id, original_text, source_language, source_script, message_type, media_url, media_name, media_mime, reply_to_message_id, reply_preview_text, reactions_json, created_at)
+          (id, group_id, sender_id, original_text, source_language, message_type, media_url, media_name, media_mime, reply_to_message_id, reply_preview_text, reactions_json, created_at)
          VALUES
-          (:id, :groupId, :senderId, :originalText, :sourceLanguage, :sourceScript, :messageType, :mediaUrl, :mediaName, :mediaMime, :replyToMessageId, :replyPreviewText, :reactionsJson, :createdAt)`,
+          (:id, :groupId, :senderId, :originalText, :sourceLanguage, :messageType, :mediaUrl, :mediaName, :mediaMime, :replyToMessageId, :replyPreviewText, :reactionsJson, :createdAt)`,
         {
           ...message,
           messageType: message.messageType || "text",
@@ -606,7 +596,6 @@ export function createMySqlRepository() {
           mediaMime: message.mediaMime || null,
           replyToMessageId: message.replyToMessageId || null,
           replyPreviewText: message.replyPreviewText || null,
-          sourceScript: message.sourceScript || "native",
           reactionsJson: JSON.stringify(message.reactions || []),
           createdAt: formattedCreatedAt
         }
@@ -667,14 +656,12 @@ export function createMySqlRepository() {
         `UPDATE group_messages
          SET original_text = :originalText,
              source_language = :sourceLanguage,
-             source_script = :sourceScript,
              edited_at = :editedAt
          WHERE id = :messageId`,
         {
           messageId,
           originalText: payload.originalText,
           sourceLanguage: payload.sourceLanguage,
-          sourceScript: payload.sourceScript || "native",
           editedAt: formattedEditedAt
         }
       );

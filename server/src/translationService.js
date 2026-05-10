@@ -494,11 +494,6 @@ export async function translateText(text, fromLanguage, toLanguage) {
   return `[${label}] ${text}`;
 }
 
-export function detectScriptPreference(text) {
-  if (!text) return "native";
-  return /[\u0900-\u097F]/.test(text) ? "native" : "roman";
-}
-
 const hindiRomanWords = new Map([
   ["नमस्ते", "namaste"],
   ["आप", "aap"],
@@ -520,9 +515,8 @@ const hindiRomanWords = new Map([
   ["नहीं", "nahi"]
 ]);
 
-export function applyScriptPreference(text, language, scriptPreference = "native", sourceScript = "native") {
-  const resolvedPreference = scriptPreference === "auto" ? sourceScript : scriptPreference;
-  if (!text || language !== "hi" || resolvedPreference !== "roman") return text;
+export function applyScriptPreference(text, language, scriptPreference = "native") {
+  if (!text || language !== "hi" || scriptPreference !== "roman") return text;
 
   return text
     .split(/(\s+)/)
