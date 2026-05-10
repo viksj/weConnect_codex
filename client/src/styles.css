@@ -795,6 +795,41 @@ select:focus {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
 }
 
+.video-subtitle {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  color: #fff;
+  text-align: left;
+  border-radius: 8px;
+  background: rgba(16, 24, 40, 0.78);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.video-subtitle span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #d7e5ff;
+}
+
+.video-subtitle strong,
+.video-subtitle small {
+  overflow-wrap: anywhere;
+}
+
+.video-subtitle strong {
+  font-size: 0.96rem;
+}
+
+.video-subtitle small {
+  color: #d0d5dd;
+}
+
 .call-preview p,
 .translation-card p {
   color: var(--muted);
@@ -828,6 +863,11 @@ select:focus {
 .translation-card .translated {
   background: #e8f7ed;
   border-color: #c4ecd0;
+}
+
+.translation-card .interim-caption {
+  color: #667085;
+  font-style: italic;
 }
 
 @media (max-width: 1100px) {

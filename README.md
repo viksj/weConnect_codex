@@ -140,6 +140,8 @@ It starts the server with `DB_PROVIDER=memory`, verifies demo OTP login, registe
 
 Voice notes preserve the original uploaded audio. When the browser provides speech recognition during recording, the captured transcript is sent through the same translation pipeline so the receiver can play the original voice and read the translated transcript.
 
+Voice/video calls preserve the original WebRTC audio/video stream. When browser speech recognition is available, final call transcripts are translated and relayed over Socket.IO as live captions; video calls also show the translated remote caption as a subtitle overlay.
+
 ## Project Structure
 
 ```

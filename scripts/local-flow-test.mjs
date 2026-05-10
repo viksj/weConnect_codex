@@ -106,6 +106,22 @@ function waitForMessage(socket) {
   });
 }
 
+function waitForEvent(socket, eventName) {
+  return new Promise((resolveEvent, rejectEvent) => {
+    const timeout = setTimeout(() => {
+      socket.off(eventName, handleEvent);
+      rejectEvent(new Error(`Timed out waiting for Socket.IO ${eventName}`));
+    }, 5_000);
+
+    function handleEvent(payload) {
+      clearTimeout(timeout);
+      resolveEvent(payload);
+    }
+
+    socket.on(eventName, handleEvent);
+  });
+}
+
 async function sendAndAssertMessage({ senderSocket, receiverSocket, sender, receiver, text, expectedTranslation }) {
   const incomingMessage = waitForMessage(receiverSocket);
   senderSocket.emit("message:send", {
@@ -252,6 +268,23 @@ async function run() {
       decryptMessage(messages[2].translatedText) === "What are you doing?",
       "Stored voice transcript translation was not English"
     );
+
+    const incomingCaption = waitForEvent(bobSocket, "call:caption");
+    aliceSocket.emit("call:caption", {
+      callId: "test-call-caption",
+      receiverId: bob.id,
+      originalText: "kya kar rhe ho",
+      translatedText: "What are you doing?",
+      sourceLanguage: "hi",
+      targetLanguage: "en",
+      isInterim: false
+    });
+    const caption = await incomingCaption;
+    assert(caption.callId === "test-call-caption", "Call caption id did not relay");
+    assert(caption.senderId === alice.id, "Call caption sender id did not relay");
+    assert(caption.senderName === alice.name, "Call caption sender name did not relay");
+    assert(caption.originalText === "kya kar rhe ho", "Call caption original text did not relay");
+    assert(caption.translatedText === "What are you doing?", "Call caption translation did not relay");
 
     console.log("Local flow test passed: demo OTP, registration, contacts, Socket.IO messaging, and translation.");
   } finally {

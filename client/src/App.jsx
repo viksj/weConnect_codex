@@ -495,11 +495,11 @@ export function App() {
       await peerRef.current.addIceCandidate(iceCandidate);
     });
 
-    socket.on("call:caption", ({ callId, originalText, translatedText, sourceLanguage, targetLanguage }) => {
+    socket.on("call:caption", ({ callId, originalText, translatedText, sourceLanguage, targetLanguage, senderName }) => {
       if (callRef.current.callId !== callId) return;
       setCall((current) => ({
         ...current,
-        remoteCaption: { originalText, translatedText, sourceLanguage, targetLanguage }
+        remoteCaption: { originalText, translatedText, sourceLanguage, targetLanguage, speakerName: senderName }
       }));
     });
 
@@ -1165,15 +1165,28 @@ export function App() {
 
     const recognition = new Recognition();
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = speechLocale(user.motherTongue);
 
     recognition.onresult = async (event) => {
       const result = event.results[event.results.length - 1];
-      if (!result?.isFinal) return;
-
-      const originalText = result[0].transcript.trim();
+      const originalText = result?.[0]?.transcript?.trim();
       if (!originalText) return;
+
+      if (!result.isFinal) {
+        setCall((current) => ({
+          ...current,
+          localCaption: {
+            originalText,
+            translatedText: current.localCaption?.translatedText || "Translating...",
+            sourceLanguage: user.motherTongue,
+            targetLanguage: callRef.current.contact.motherTongue,
+            isInterim: true,
+            speakerName: user.name
+          }
+        }));
+        return;
+      }
 
       try {
         const translated = await translateCaption({
@@ -1182,33 +1195,51 @@ export function App() {
           toLanguage: callRef.current.contact.motherTongue
         }, authToken);
 
-        setCall((current) => ({ ...current, localCaption: translated }));
+        const caption = {
+          ...translated,
+          isInterim: false,
+          speakerName: user.name
+        };
+        setCall((current) => ({ ...current, localCaption: caption }));
         socketRef.current?.emit("call:caption", {
           callId: callRef.current.callId,
           receiverId: callRef.current.contact.id,
-          ...translated
+          ...caption
         });
       } catch {
-        setCall((current) => ({
-          ...current,
-          localCaption: {
-            originalText,
-            translatedText: originalText,
-            sourceLanguage: user.motherTongue,
-            targetLanguage: callRef.current.contact.motherTongue
-          }
-        }));
+        const fallbackCaption = {
+          originalText,
+          translatedText: originalText,
+          sourceLanguage: user.motherTongue,
+          targetLanguage: callRef.current.contact.motherTongue,
+          isInterim: false,
+          speakerName: user.name
+        };
+        setCall((current) => ({ ...current, localCaption: fallbackCaption }));
+        socketRef.current?.emit("call:caption", {
+          callId: callRef.current.callId,
+          receiverId: callRef.current.contact.id,
+          ...fallbackCaption
+        });
       }
     };
 
     recognition.onend = () => {
-      if (callRef.current.status === "active") {
-        recognition.start();
+      if (callRef.current.status === "active" && recognitionRef.current === recognition) {
+        try {
+          recognition.start();
+        } catch {
+          recognitionRef.current = null;
+        }
       }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+    }
   }
 
   if (step !== "chat") {
@@ -1633,6 +1664,13 @@ function CallPanel({
         <video ref={remoteVideoRef} autoPlay playsInline />
         <video ref={localVideoRef} autoPlay muted playsInline />
         {call.type !== "video" && <span className="avatar large">{contact?.avatar || "C"}</span>}
+        {call.type === "video" && inCall && call.remoteCaption?.translatedText && (
+          <div className="video-subtitle">
+            <span>{call.remoteCaption.speakerName || contact?.name || "Contact"}</span>
+            <strong>{call.remoteCaption.translatedText}</strong>
+            {call.remoteCaption.originalText && <small>{call.remoteCaption.originalText}</small>}
+          </div>
+        )}
       </div>
 
       <h3>{call.type === "video" ? "Video Call" : "Voice Call"}</h3>
@@ -1684,8 +1722,12 @@ function CaptionBlock({ title, caption }) {
   return (
     <div className="caption-block">
       <p>{title}</p>
-      <strong>{caption?.originalText || "Listening..."}</strong>
-      <strong className="translated">{caption?.translatedText || "Translated captions appear here."}</strong>
+      <strong className={caption?.isInterim ? "interim-caption" : ""}>
+        {caption?.originalText || "Listening..."}
+      </strong>
+      <strong className={`translated ${caption?.isInterim ? "interim-caption" : ""}`}>
+        {caption?.translatedText || "Translated captions appear here."}
+      </strong>
     </div>
   );
 }
