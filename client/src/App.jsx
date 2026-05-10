@@ -38,7 +38,8 @@ import {
   registerUser,
   translateCaption,
   uploadLocalMedia,
-  updateUser
+  updateUser,
+  verifyOtp
 } from "./api";
 import { languageName, languages } from "./constants";
 import { firebaseAuth, isFirebaseConfigured } from "./firebase";
@@ -548,7 +549,10 @@ export function App() {
 
     try {
       if (!isFirebaseConfigured || !firebaseAuth) {
-        throw new Error("Firebase config missing");
+        setConfirmationResult({ demo: true });
+        setOtp("");
+        setStep("verify");
+        return;
       }
 
       if (!recaptchaVerifierRef.current) {
@@ -566,9 +570,7 @@ export function App() {
       recaptchaVerifierRef.current?.clear();
       recaptchaVerifierRef.current = null;
       setError(
-        caughtError.message === "Firebase config missing"
-          ? "Firebase config missing hai. client/.env file me Firebase values add karo."
-          : "OTP send nahi ho paaya. Phone number +91 format me hona chahiye aur Firebase Phone Auth enabled hona chahiye."
+        "OTP send nahi ho paaya. Phone number +91 format me hona chahiye aur Firebase Phone Auth enabled hona chahiye."
       );
     } finally {
       setIsSendingOtp(false);
@@ -590,11 +592,24 @@ export function App() {
         throw new Error("Invalid verification code");
       }
 
-      const firebaseCredential = await confirmationResult.confirm(verificationCode);
-      const token = await firebaseCredential.user.getIdToken();
+      let phoneNumber = form.emailOrPhone;
+      let token = "";
+
+      if (confirmationResult.demo) {
+        const demoResult = await verifyOtp(verificationCode, form.emailOrPhone.trim());
+        if (!demoResult.verified || !demoResult.token) {
+          throw new Error("Invalid verification code");
+        }
+        token = demoResult.token;
+      } else {
+        const firebaseCredential = await confirmationResult.confirm(verificationCode);
+        token = await firebaseCredential.user.getIdToken();
+        phoneNumber = firebaseCredential.user.phoneNumber || form.emailOrPhone;
+      }
+
       const result = await registerUser({
         ...form,
-        emailOrPhone: firebaseCredential.user.phoneNumber || form.emailOrPhone
+        emailOrPhone: phoneNumber
       }, token);
       setAuthToken(token);
       setUser(result.user);
@@ -605,6 +620,8 @@ export function App() {
       const message =
         caughtError.code === "auth/invalid-verification-code"
           ? "OTP invalid hai. Firebase test number ke saath wahi code daalein jo console me dikha hai."
+          : confirmationResult.demo
+            ? "Demo OTP verify nahi hua. server/.env me ENABLE_DEMO_OTP=true rakho aur code 123456 use karo."
           : "OTP verify nahi hua. SMS wala code dobara check karo.";
       setError(message);
     } finally {
@@ -1120,7 +1137,11 @@ export function App() {
           <form className="auth-card compact" onSubmit={handleVerify}>
             <Shield className="hero-icon" size={44} />
             <h2>Verify your number</h2>
-            <p className="muted">Firebase ne {form.emailOrPhone} par SMS OTP send kiya hai.</p>
+            <p className="muted">
+              {confirmationResult?.demo
+                ? `Local demo mode me ${form.emailOrPhone} ke liye OTP 123456 use karein.`
+                : `Firebase ne ${form.emailOrPhone} par SMS OTP send kiya hai.`}
+            </p>
             <input
               className="otp-input"
               inputMode="numeric"

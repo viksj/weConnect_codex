@@ -8,7 +8,7 @@ import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { v4 as uuid } from "uuid";
 import { createDatabase } from "./db/index.js";
-import { firebaseAdminAuth, verifyFirebaseToken } from "./firebaseAdmin.js";
+import { createDemoAuthToken, firebaseAdminAuth, verifyFirebaseToken } from "./firebaseAdmin.js";
 import { detectLanguage, translateText } from "./translationService.js";
 import { encryptMessage, decryptMessage } from "./encryptionService.js";
 
@@ -260,8 +260,12 @@ app.post("/api/verify-otp", (req, res) => {
     return;
   }
 
-  const { code } = req.body;
-  res.json({ verified: code === "123456" });
+  const { code, phone } = req.body;
+  const verified = code === "123456";
+  res.json({
+    verified,
+    token: verified && phone ? createDemoAuthToken(phone) : null
+  });
 });
 
 app.get("/api/users/:userId/contacts", requireFirebaseAuth, loadAuthenticatedUser, requireUserParam, async (req, res) => {

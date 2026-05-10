@@ -28,7 +28,45 @@ function createFirebaseAuth() {
 
 export const firebaseAdminAuth = createFirebaseAuth();
 
+export function isDemoAuthEnabled() {
+  return process.env.NODE_ENV !== "production" && process.env.ENABLE_DEMO_OTP === "true";
+}
+
+export function createDemoAuthToken(phoneNumber) {
+  const normalizedPhone = phoneNumber?.trim();
+  if (!normalizedPhone) {
+    throw new Error("Phone number is required for demo auth.");
+  }
+
+  const payload = {
+    demo: true,
+    uid: `demo:${normalizedPhone}`,
+    phone_number: normalizedPhone
+  };
+
+  return `demo.${Buffer.from(JSON.stringify(payload)).toString("base64url")}`;
+}
+
+function verifyDemoToken(idToken) {
+  if (!isDemoAuthEnabled() || !idToken?.startsWith("demo.")) {
+    return null;
+  }
+
+  const encodedPayload = idToken.slice("demo.".length);
+  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+  if (!payload?.demo || !payload.uid || !payload.phone_number) {
+    throw new Error("Invalid demo auth token.");
+  }
+
+  return payload;
+}
+
 export async function verifyFirebaseToken(idToken) {
+  const demoUser = verifyDemoToken(idToken);
+  if (demoUser) {
+    return demoUser;
+  }
+
   if (!firebaseAdminAuth) {
     throw new Error("Firebase Admin is not configured.");
   }

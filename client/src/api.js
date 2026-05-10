@@ -29,11 +29,11 @@ export async function updateUser(userId, payload, token) {
   return response.json();
 }
 
-export async function verifyOtp(code) {
+export async function verifyOtp(code, phone) {
   const response = await fetch(`${API_URL}/api/verify-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code })
+    body: JSON.stringify({ code, phone })
   });
 
   if (!response.ok) throw new Error("OTP verification failed");

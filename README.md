@@ -189,6 +189,8 @@ Set `TRANSLATION_PROVIDER=openai` for AI translation, or `TRANSLATION_PROVIDER=l
 
 For the current local build, MySQL is the primary database. Domain, hosting, NGINX/API gateway, cloud storage, Redis scaling, and mobile app work are intentionally outside this phase. Media and voice messages are saved locally in `server/uploads/`.
 
+If Firebase Phone Auth is not configured yet, set `ENABLE_DEMO_OTP=true` in `server/.env`. The web app will use local demo OTP `123456` when Firebase client config is missing. Keep this disabled outside local development.
+
 ### Calling
 - `call:invite` - Initiate call
 - `call:accept` - Accept call
