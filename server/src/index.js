@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 import { v4 as uuid } from "uuid";
 import { createDatabase } from "./db/index.js";
 import { createDemoAuthToken, firebaseAdminAuth, verifyFirebaseToken } from "./firebaseAdmin.js";
-import { detectLanguage, translateText } from "./translationService.js";
+import { applyScriptPreference, detectLanguage, translateText } from "./translationService.js";
 import { encryptMessage, decryptMessage } from "./encryptionService.js";
 
 const app = express();
@@ -150,9 +150,17 @@ async function withConversationSummary(userId, contact) {
 
 async function formatGroupMessageForUser(message, user) {
   const originalText = decryptMessage(message.originalText);
-  const translatedText = await translateText(originalText, message.sourceLanguage, user.motherTongue);
+  const translatedText = applyScriptPreference(
+    await translateText(originalText, message.sourceLanguage, user.motherTongue),
+    user.motherTongue,
+    user.scriptPreference
+  );
   const replyPreviewText = message.replyPreviewText
-    ? await translateText(decryptMessage(message.replyPreviewText), message.sourceLanguage, user.motherTongue)
+    ? applyScriptPreference(
+        await translateText(decryptMessage(message.replyPreviewText), message.sourceLanguage, user.motherTongue),
+        user.motherTongue,
+        user.scriptPreference
+      )
     : "";
 
   return {
@@ -169,10 +177,14 @@ async function formatGroupMessageForUser(message, user) {
 async function formatDirectMessageForUser(message, user) {
   const isSender = message.senderId === user.id;
   const replyPreviewText = message.replyPreviewText
-    ? await translateText(
-        decryptMessage(message.replyPreviewText),
-        message.sourceLanguage,
-        isSender ? message.sourceLanguage : user.motherTongue
+    ? applyScriptPreference(
+        await translateText(
+          decryptMessage(message.replyPreviewText),
+          message.sourceLanguage,
+          isSender ? message.sourceLanguage : user.motherTongue
+        ),
+        isSender ? message.sourceLanguage : user.motherTongue,
+        user.scriptPreference
       )
     : "";
 
@@ -253,7 +265,7 @@ app.post("/api/register", requireFirebaseAuth, async (req, res) => {
 });
 
 app.patch("/api/users/:userId", requireFirebaseAuth, loadAuthenticatedUser, requireUserParam, async (req, res) => {
-  const { name, motherTongue } = req.body;
+  const { name, motherTongue, scriptPreference } = req.body;
 
   if (!name?.trim()) {
     res.status(400).json({ error: "Name is required." });
@@ -264,6 +276,7 @@ app.patch("/api/users/:userId", requireFirebaseAuth, loadAuthenticatedUser, requ
     const user = await database.updateUser(req.params.userId, {
       name: name.trim(),
       motherTongue,
+      scriptPreference,
       understands: motherTongue
     });
     res.json({ user: withOnlineStatus(user) });
@@ -516,7 +529,11 @@ io.on("connection", (socket) => {
     const decryptedText = text?.trim() ? decryptMessage(text) : mediaName || "Attachment";
 
     const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
-    const translatedText = await translateText(decryptedText, sourceLanguage, receiver.motherTongue);
+    const translatedText = applyScriptPreference(
+      await translateText(decryptedText, sourceLanguage, receiver.motherTongue),
+      receiver.motherTongue,
+      receiver.scriptPreference
+    );
     await database.addContact(sender.id, receiverId);
     await database.addContact(receiverId, sender.id);
     const message = await database.saveMessage({
@@ -574,7 +591,11 @@ io.on("connection", (socket) => {
     if (!decryptedText) return;
 
     const sourceLanguage = detectLanguage(decryptedText, sender.motherTongue);
-    const translatedText = await translateText(decryptedText, sourceLanguage, receiver.motherTongue);
+    const translatedText = applyScriptPreference(
+      await translateText(decryptedText, sourceLanguage, receiver.motherTongue),
+      receiver.motherTongue,
+      receiver.scriptPreference
+    );
     const updatedMessage = await database.updateMessageContent?.(messageId, {
       originalText: encryptMessage(decryptedText),
       translatedText: encryptMessage(translatedText),

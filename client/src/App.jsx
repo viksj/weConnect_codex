@@ -51,7 +51,8 @@ import { playVoiceTranslation, stopVoicePlayback } from "./voiceTranslator";
 const demoUser = {
   name: "You",
   emailOrPhone: "+91 90000 00000",
-  motherTongue: "hi"
+  motherTongue: "hi",
+  scriptPreference: "native"
 };
 const webSessionKey = "weconnect:web-session";
 
@@ -59,7 +60,8 @@ function userToForm(user) {
   return {
     name: user?.name || demoUser.name,
     emailOrPhone: user?.emailOrPhone || demoUser.emailOrPhone,
-    motherTongue: user?.motherTongue || demoUser.motherTongue
+    motherTongue: user?.motherTongue || demoUser.motherTongue,
+    scriptPreference: user?.scriptPreference || demoUser.scriptPreference
   };
 }
 
@@ -766,7 +768,8 @@ export function App() {
       const result = await registerUser({
         name: form.name.trim(),
         emailOrPhone: form.emailOrPhone,
-        motherTongue: form.motherTongue
+        motherTongue: form.motherTongue,
+        scriptPreference: form.scriptPreference
       }, authToken);
       setUser(result.user);
       setProfileForm(result.user);
@@ -999,7 +1002,8 @@ export function App() {
     try {
       const result = await updateUser(user.id, {
         name: profileForm.name,
-        motherTongue: profileForm.motherTongue
+        motherTongue: profileForm.motherTongue,
+        scriptPreference: profileForm.scriptPreference
       }, authToken);
       setUser(result.user);
       saveStoredSession({ authToken, user: result.user });
@@ -1438,6 +1442,18 @@ export function App() {
                   ))}
                 </select>
               </label>
+              {form.motherTongue === "hi" && (
+                <label>
+                  Hindi Style
+                  <select
+                    value={form.scriptPreference || "native"}
+                    onChange={(event) => setForm({ ...form, scriptPreference: event.target.value })}
+                  >
+                    <option value="native">Hindi script</option>
+                    <option value="roman">Roman Hindi</option>
+                  </select>
+                </label>
+              )}
               <button className="primary-button" type="submit">Open chats</button>
             </form>
           )}
@@ -1472,6 +1488,18 @@ export function App() {
                   {languages.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}
                 </select>
               </label>
+              {profileForm.motherTongue === "hi" && (
+                <label className="mini-field">
+                  Hindi Style
+                  <select
+                    value={profileForm.scriptPreference || "native"}
+                    onChange={(event) => setProfileForm({ ...profileForm, scriptPreference: event.target.value })}
+                  >
+                    <option value="native">Hindi script</option>
+                    <option value="roman">Roman Hindi</option>
+                  </select>
+                </label>
+              )}
               <button className="secondary-button" type="submit">Save profile</button>
               <button className="secondary-button ghost-button" type="button" onClick={handleLogout}>Log out</button>
             </form>

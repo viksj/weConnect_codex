@@ -12,6 +12,7 @@ function mapUser(row) {
     firebaseUid: row.firebase_uid,
     motherTongue: row.mother_tongue,
     understands: row.understands,
+    scriptPreference: row.script_preference || "native",
     avatar: row.avatar
   };
 }
@@ -87,6 +88,7 @@ export function createMySqlRepository() {
         firebase_uid VARCHAR(160) NULL UNIQUE,
         mother_tongue VARCHAR(16) NOT NULL DEFAULT 'hi',
         understands VARCHAR(16) NOT NULL DEFAULT 'en',
+        script_preference VARCHAR(16) NOT NULL DEFAULT 'native',
         avatar VARCHAR(8) NOT NULL DEFAULT 'U',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -111,6 +113,9 @@ export function createMySqlRepository() {
     `);
 
     await pool.query("ALTER TABLE messages ADD COLUMN read_at DATETIME(3) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE users ADD COLUMN script_preference VARCHAR(16) NOT NULL DEFAULT 'native'").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
     await pool.query("ALTER TABLE messages ADD COLUMN message_type VARCHAR(32) NOT NULL DEFAULT 'text'").catch((error) => {
@@ -266,19 +271,21 @@ export function createMySqlRepository() {
         firebaseUid: payload.firebaseUid || existingUser?.firebaseUid || null,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
+        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 
       await pool.query(
         `INSERT INTO users
-          (id, name, email_or_phone, firebase_uid, mother_tongue, understands, avatar)
+          (id, name, email_or_phone, firebase_uid, mother_tongue, understands, script_preference, avatar)
          VALUES
-          (:id, :name, :emailOrPhone, :firebaseUid, :motherTongue, :understands, :avatar)
+          (:id, :name, :emailOrPhone, :firebaseUid, :motherTongue, :understands, :scriptPreference, :avatar)
          ON DUPLICATE KEY UPDATE
           name = VALUES(name),
           firebase_uid = VALUES(firebase_uid),
           mother_tongue = VALUES(mother_tongue),
           understands = VALUES(understands),
+          script_preference = VALUES(script_preference),
           avatar = VALUES(avatar)`,
         user
       );
@@ -312,6 +319,7 @@ export function createMySqlRepository() {
         name: payload.name,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
+        scriptPreference: payload.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 
@@ -320,6 +328,7 @@ export function createMySqlRepository() {
          SET name = :name,
              mother_tongue = :motherTongue,
              understands = :understands,
+             script_preference = :scriptPreference,
              avatar = :avatar
          WHERE id = :userId`,
         user

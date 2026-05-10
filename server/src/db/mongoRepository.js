@@ -12,6 +12,7 @@ function mapUser(document) {
     firebaseUid: document.firebaseUid || null,
     motherTongue: document.motherTongue,
     understands: document.understands,
+    scriptPreference: document.scriptPreference || "native",
     avatar: document.avatar
   };
 }
@@ -123,6 +124,7 @@ export function createMongoRepository() {
         firebaseUid: payload.firebaseUid || existingUser?.firebaseUid || null,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
+        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U",
         updatedAt: new Date().toISOString()
       };
@@ -154,6 +156,7 @@ export function createMongoRepository() {
         name: payload.name,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
+        scriptPreference: payload.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U",
         updatedAt: new Date().toISOString()
       };

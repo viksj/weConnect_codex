@@ -372,7 +372,8 @@ async function run() {
       {
         name: "Alice Local",
         emailOrPhone: alicePhone,
-        motherTongue: "hi"
+        motherTongue: "hi",
+        scriptPreference: "roman"
       },
       aliceToken
     );
@@ -385,6 +386,7 @@ async function run() {
       },
       bobToken
     );
+    assert(alice.scriptPreference === "roman", `Expected Alice Roman Hindi preference, got ${alice.scriptPreference}`);
 
     await post(`/api/users/${alice.id}/contacts`, { emailOrPhone: bobPhone }, aliceToken);
     const { contacts } = await get(`/api/users/${alice.id}/contacts`, aliceToken);
@@ -430,15 +432,15 @@ async function run() {
       sender: bob,
       receiver: alice,
       text: "hello",
-      expectedTranslation: "नमस्ते",
+      expectedTranslation: "namaste",
       replyToMessageId: firstMessage.id,
       replyPreviewText: "Hello",
-      expectedReplyPreview: "नमस्ते",
+      expectedReplyPreview: "namaste",
       expectedSourceLanguage: "en",
       expectedTargetLanguage: "hi"
     });
     assert(
-      decryptMessage(firstReplyFromBob.replyPreviewText) === "नमस्ते",
+      decryptMessage(firstReplyFromBob.replyPreviewText) === "namaste",
       "Direct reply preview was not translated for the receiver"
     );
     const secondMessage = await sendAndAssertMessage({

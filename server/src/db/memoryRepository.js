@@ -32,6 +32,7 @@ export function createMemoryRepository() {
         firebaseUid: payload.firebaseUid || existingUser?.firebaseUid || null,
         motherTongue: payload.motherTongue || "hi",
         understands: payload.understands || payload.motherTongue || "hi",
+        scriptPreference: payload.scriptPreference || existingUser?.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || "U"
       };
 
@@ -52,6 +53,7 @@ export function createMemoryRepository() {
         name: payload.name,
         motherTongue: payload.motherTongue || existingUser.motherTongue,
         understands: payload.understands || payload.motherTongue || existingUser.understands,
+        scriptPreference: payload.scriptPreference || existingUser.scriptPreference || "native",
         avatar: payload.name?.charAt(0)?.toUpperCase() || existingUser.avatar
       };
       users.set(userId, user);

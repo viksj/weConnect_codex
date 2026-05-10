@@ -493,3 +493,37 @@ export async function translateText(text, fromLanguage, toLanguage) {
   const label = `${fromLanguage.toUpperCase()} -> ${toLanguage.toUpperCase()}`;
   return `[${label}] ${text}`;
 }
+
+const hindiRomanWords = new Map([
+  ["नमस्ते", "namaste"],
+  ["आप", "aap"],
+  ["क्या", "kya"],
+  ["कर", "kar"],
+  ["रहे", "rahe"],
+  ["रहा", "raha"],
+  ["हैं", "hain"],
+  ["है", "hai"],
+  ["चल", "chal"],
+  ["मुझे", "mujhe"],
+  ["कॉल", "call"],
+  ["करो", "karo"],
+  ["धन्यवाद", "dhanyavaad"],
+  ["ठीक", "theek"],
+  ["हूँ", "hun"],
+  ["सब", "sab"],
+  ["कुछ", "kuch"],
+  ["नहीं", "nahi"]
+]);
+
+export function applyScriptPreference(text, language, scriptPreference = "native") {
+  if (!text || language !== "hi" || scriptPreference !== "roman") return text;
+
+  return text
+    .split(/(\s+)/)
+    .map((part) => {
+      if (/^\s+$/.test(part)) return part;
+      const [, leading = "", word = part, trailing = ""] = part.match(/^([("'“‘¿¡]*)(.*?)([.,!?;:)"'”’]*)$/u) || [];
+      return `${leading}${hindiRomanWords.get(word) || word}${trailing}`;
+    })
+    .join("");
+}
