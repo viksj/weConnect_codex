@@ -54,6 +54,24 @@ async function post(path, body, token) {
   return payload;
 }
 
+async function postExpectError(path, body, token, expectedStatus) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (response.status !== expectedStatus) {
+    throw new Error(`${path} expected ${expectedStatus}, got ${response.status}: ${payload.error || "unknown error"}`);
+  }
+
+  return payload;
+}
+
 async function get(path, token) {
   const response = await fetch(`${baseUrl}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -240,6 +258,14 @@ async function run() {
     await post(`/api/users/${alice.id}/contacts`, { emailOrPhone: bobPhone }, aliceToken);
     const { contacts } = await get(`/api/users/${alice.id}/contacts`, aliceToken);
     assert(contacts.some((contact) => contact.id === bob.id), "Bob was not added to Alice contacts");
+    const inviteResult = await postExpectError(
+      `/api/users/${alice.id}/contacts`,
+      { emailOrPhone: "+919999999999" },
+      aliceToken,
+      404
+    );
+    assert(inviteResult.invite?.link, "Unregistered contact did not return invite link");
+    assert(inviteResult.invite?.message?.includes(inviteResult.invite.link), "Invite message does not include invite link");
 
     aliceSocket = await connectSocket(alice, aliceToken);
     bobSocket = await connectSocket(bob, bobToken);
@@ -304,6 +330,11 @@ async function run() {
     assert(deleteResult.deleted === true, "Delete conversation did not return deleted=true");
     const { messages: messagesAfterDelete } = await get(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
     assert(messagesAfterDelete.length === 0, "Deleted conversation is still visible to deleting user");
+    const { contacts: bobContactsAfterDelete } = await get(`/api/users/${bob.id}/contacts`, bobToken);
+    const aliceContactAfterDelete = bobContactsAfterDelete.find((contact) => contact.id === alice.id);
+    assert(aliceContactAfterDelete, "Deleting a conversation removed the contact");
+    assert(!aliceContactAfterDelete.lastMessage, "Deleted conversation still shows a last message preview");
+    assert(Number(aliceContactAfterDelete.unreadCount || 0) === 0, "Deleted conversation still shows unread messages");
     const { messages: aliceMessagesAfterBobDelete } = await get(`/api/users/${alice.id}/conversations/${bob.id}`, aliceToken);
     assert(aliceMessagesAfterBobDelete.length === 3, "Delete-for-me removed messages for the other user");
 

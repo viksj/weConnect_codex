@@ -982,6 +982,17 @@ export function App() {
           return !(sent || received);
         })
       );
+      setContacts((current) =>
+        current.map((contact) =>
+          contact.id === activeContact.id
+            ? {
+                ...contact,
+                lastMessage: null,
+                unreadCount: 0
+              }
+            : contact
+        )
+      );
       setError("Chat deleted for you.");
     } catch {
       setError("Chat delete nahi ho paayi.");

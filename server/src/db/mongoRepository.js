@@ -173,20 +173,29 @@ export function createMongoRepository() {
     },
 
     async getConversationSummary(userId, contactId) {
+      const deletion = await conversationDeletionsCollection().findOne({ userId, contactId });
+      const createdAtFilter = deletion?.deletedAt ? { createdAt: { $gt: deletion.deletedAt } } : {};
+      const conversationFilter = {
+        $and: [
+          {
+            $or: [
+              { senderId: userId, receiverId: contactId },
+              { senderId: contactId, receiverId: userId }
+            ]
+          },
+          createdAtFilter
+        ]
+      };
       const lastMessage = await messagesCollection()
-        .find({
-          $or: [
-            { senderId: userId, receiverId: contactId },
-            { senderId: contactId, receiverId: userId }
-          ]
-        })
+        .find(conversationFilter)
         .sort({ createdAt: -1 })
         .limit(1)
         .next();
       const unreadCount = await messagesCollection().countDocuments({
         senderId: contactId,
         receiverId: userId,
-        status: { $ne: "read" }
+        status: { $ne: "read" },
+        ...createdAtFilter
       });
 
       return {

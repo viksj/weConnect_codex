@@ -71,11 +71,13 @@ export function createMemoryRepository() {
     },
 
     async getConversationSummary(userId, contactId) {
+      const deletedAt = deletedConversations.get(`${userId}:${contactId}`);
       const conversation = messages
         .filter((message) => {
           const sent = message.senderId === userId && message.receiverId === contactId;
           const received = message.senderId === contactId && message.receiverId === userId;
-          return sent || received;
+          const visible = !deletedAt || new Date(message.createdAt) > new Date(deletedAt);
+          return (sent || received) && visible;
         })
         .sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt));
       const lastMessage = conversation[conversation.length - 1] || null;

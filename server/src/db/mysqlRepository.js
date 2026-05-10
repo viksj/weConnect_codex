@@ -319,20 +319,36 @@ export function createMySqlRepository() {
 
     async getConversationSummary(userId, contactId) {
       const [lastRows] = await pool.query(
-        `SELECT *
+        `SELECT messages.*
          FROM messages
-         WHERE (sender_id = :userId AND receiver_id = :contactId)
-            OR (sender_id = :contactId AND receiver_id = :userId)
-         ORDER BY created_at DESC
+         LEFT JOIN conversation_deletions
+           ON conversation_deletions.user_id = :userId
+          AND conversation_deletions.contact_id = :contactId
+         WHERE (
+             (sender_id = :userId AND receiver_id = :contactId)
+             OR (sender_id = :contactId AND receiver_id = :userId)
+           )
+           AND (
+             conversation_deletions.deleted_at IS NULL
+             OR messages.created_at > conversation_deletions.deleted_at
+           )
+         ORDER BY messages.created_at DESC
          LIMIT 1`,
         { userId, contactId }
       );
       const [unreadRows] = await pool.query(
         `SELECT COUNT(*) AS unreadCount
          FROM messages
+         LEFT JOIN conversation_deletions
+           ON conversation_deletions.user_id = :userId
+          AND conversation_deletions.contact_id = :contactId
          WHERE sender_id = :contactId
            AND receiver_id = :userId
-           AND status <> 'read'`,
+           AND status <> 'read'
+           AND (
+             conversation_deletions.deleted_at IS NULL
+             OR messages.created_at > conversation_deletions.deleted_at
+           )`,
         { userId, contactId }
       );
 
