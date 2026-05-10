@@ -211,6 +211,9 @@ export function App() {
   const recognitionRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedVoiceChunksRef = useRef([]);
+  const isVoiceMessageRecordingRef = useRef(false);
+  const voiceMessageRecognitionRef = useRef(null);
+  const voiceMessageTranscriptRef = useRef("");
   const typingStopTimeoutRef = useRef(null);
   const pendingIceRef = useRef([]);
   const callRef = useRef(call);
@@ -703,6 +706,8 @@ export function App() {
     clearStoredSession();
     socketRef.current?.disconnect();
     stopVoicePlayback();
+    mediaRecorderRef.current?.stop?.();
+    stopVoiceMessageTranscription();
     cleanupCall();
     setUser(null);
     setAuthToken("");
@@ -756,17 +761,19 @@ export function App() {
     }, 1200);
   }
 
-  async function sendMediaMessage(file, forcedType) {
+  async function sendMediaMessage(file, forcedType, transcript = "") {
     if (!user || !authToken || !activeChat || !file) return;
 
     try {
       const dataUrl = await fileToDataUrl(file);
       const { upload } = await uploadLocalMedia(user.id, { dataUrl, name: file.name }, authToken);
       const messageType = forcedType || mediaKind(file);
+      const messageTextForTranslation =
+        messageType === "audio" ? transcript.trim() || "Voice message" : file.name;
       socketRef.current?.emit(isGroupChat ? "group:message:send" : "message:send", {
         receiverId: isGroupChat ? undefined : activeChat.id,
         groupId: isGroupChat ? activeChat.id : undefined,
-        text: encryptMessage(messageType === "audio" ? "Voice message" : file.name),
+        text: encryptMessage(messageTextForTranslation),
         messageType,
         mediaUrl: upload.url,
         mediaName: upload.name,
@@ -784,6 +791,54 @@ export function App() {
     if (file) await sendMediaMessage(file);
   }
 
+  function startVoiceMessageTranscription() {
+    const Recognition = speechRecognitionConstructor();
+    voiceMessageTranscriptRef.current = "";
+
+    if (!Recognition) {
+      setError("Voice record ho raha hai. Browser speech transcript support nahi karta.");
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = speechLocale(user?.motherTongue || "en");
+
+    recognition.onresult = (event) => {
+      const transcriptParts = [];
+      for (let index = 0; index < event.results.length; index += 1) {
+        transcriptParts.push(event.results[index][0].transcript.trim());
+      }
+      voiceMessageTranscriptRef.current = transcriptParts.join(" ").replace(/\s+/g, " ").trim();
+    };
+
+    recognition.onerror = () => {
+      voiceMessageRecognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      if (voiceMessageRecognitionRef.current === recognition && isVoiceMessageRecordingRef.current) {
+        recognition.start();
+      }
+    };
+
+    voiceMessageRecognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      voiceMessageRecognitionRef.current = null;
+    }
+  }
+
+  function stopVoiceMessageTranscription() {
+    const recognition = voiceMessageRecognitionRef.current;
+    voiceMessageRecognitionRef.current = null;
+    isVoiceMessageRecordingRef.current = false;
+    recognition?.stop?.();
+    return voiceMessageTranscriptRef.current.trim();
+  }
+
   async function stopVoiceRecording() {
     mediaRecorderRef.current?.stop();
   }
@@ -797,6 +852,7 @@ export function App() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const recorder = new MediaRecorder(stream);
     recordedVoiceChunksRef.current = [];
+    isVoiceMessageRecordingRef.current = true;
     mediaRecorderRef.current = recorder;
 
     recorder.ondataavailable = (event) => {
@@ -805,21 +861,24 @@ export function App() {
     recorder.onstop = async () => {
       stream.getTracks().forEach((track) => track.stop());
       setIsRecordingVoiceMessage(false);
+      const transcript = stopVoiceMessageTranscription();
       const blob = new Blob(recordedVoiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
       recordedVoiceChunksRef.current = [];
       mediaRecorderRef.current = null;
       if (blob.size === 0) return;
       const file = new File([blob], `voice-${Date.now()}.webm`, { type: blob.type || "audio/webm" });
-      await sendMediaMessage(file, "audio");
+      await sendMediaMessage(file, "audio", transcript);
     };
     recorder.onerror = () => {
       stream.getTracks().forEach((track) => track.stop());
       setIsRecordingVoiceMessage(false);
+      stopVoiceMessageTranscription();
       mediaRecorderRef.current = null;
       setError("Voice message record nahi ho paaya.");
     };
 
     recorder.start();
+    startVoiceMessageTranscription();
     setIsRecordingVoiceMessage(true);
   }
 

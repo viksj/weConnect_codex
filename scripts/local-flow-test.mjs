@@ -127,6 +127,32 @@ async function sendAndAssertMessage({ senderSocket, receiverSocket, sender, rece
   return message;
 }
 
+async function sendAndAssertVoiceMessage({ senderSocket, receiverSocket, sender, receiver, transcript, expectedTranslation }) {
+  const incomingMessage = waitForMessage(receiverSocket);
+  senderSocket.emit("message:send", {
+    receiverId: receiver.id,
+    text: encryptMessage(transcript),
+    messageType: "audio",
+    mediaUrl: "/uploads/test-voice-message.webm",
+    mediaName: "test-voice-message.webm",
+    mediaMime: "audio/webm"
+  });
+
+  const message = await incomingMessage;
+  assert(message.senderId === sender.id, `Voice message sender is not ${sender.name}`);
+  assert(message.receiverId === receiver.id, `Voice message receiver is not ${receiver.name}`);
+  assert(message.messageType === "audio", `Expected audio message type, got ${message.messageType}`);
+  assert(message.mediaUrl === "/uploads/test-voice-message.webm", "Original voice audio URL was not preserved");
+  assert(message.mediaMime === "audio/webm", "Original voice audio MIME was not preserved");
+  assert(decryptMessage(message.originalText) === transcript, "Voice transcript did not round-trip");
+  assert(
+    decryptMessage(message.translatedText) === expectedTranslation,
+    `Expected voice translation "${expectedTranslation}", got "${decryptMessage(message.translatedText)}"`
+  );
+
+  return message;
+}
+
 function startServer() {
   return spawn("node", ["server/src/index.js"], {
     cwd: projectRoot,
@@ -204,13 +230,27 @@ async function run() {
       text: "kya kar rhe ho",
       expectedTranslation: "What are you doing?"
     });
+    await sendAndAssertVoiceMessage({
+      senderSocket: aliceSocket,
+      receiverSocket: bobSocket,
+      sender: alice,
+      receiver: bob,
+      transcript: "kya kar rhe ho",
+      expectedTranslation: "What are you doing?"
+    });
 
     const { messages } = await get(`/api/users/${bob.id}/conversations/${alice.id}`, bobToken);
-    assert(messages.length === 2, `Expected two stored conversation messages, got ${messages.length}`);
+    assert(messages.length === 3, `Expected three stored conversation messages, got ${messages.length}`);
     assert(decryptMessage(messages[0].translatedText) === "How are you?", "Stored translation was not English");
     assert(
       decryptMessage(messages[1].translatedText) === "What are you doing?",
       "Stored Roman Hindi variant translation was not English"
+    );
+    assert(messages[2].messageType === "audio", "Stored voice message type was not audio");
+    assert(messages[2].mediaUrl === "/uploads/test-voice-message.webm", "Stored original voice audio URL was not preserved");
+    assert(
+      decryptMessage(messages[2].translatedText) === "What are you doing?",
+      "Stored voice transcript translation was not English"
     );
 
     console.log("Local flow test passed: demo OTP, registration, contacts, Socket.IO messaging, and translation.");

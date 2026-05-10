@@ -138,6 +138,8 @@ TEST_PORT=4025 node scripts/local-flow-test.mjs
 
 It starts the server with `DB_PROVIDER=memory`, verifies demo OTP login, registers two users, adds a contact, sends an encrypted Socket.IO message, and checks the translated stored message.
 
+Voice notes preserve the original uploaded audio. When the browser provides speech recognition during recording, the captured transcript is sent through the same translation pipeline so the receiver can play the original voice and read the translated transcript.
+
 ## Project Structure
 
 ```
