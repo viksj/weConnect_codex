@@ -39,6 +39,7 @@ function mapMessage(document) {
     status: document.status,
     readAt: document.readAt,
     editedAt: document.editedAt || null,
+    deletedForEveryoneAt: document.deletedForEveryoneAt || null,
     createdAt: document.createdAt
   };
 }
@@ -262,6 +263,25 @@ export function createMongoRepository() {
       return this.getMessageById(messageId);
     },
 
+    async deleteMessageForEveryone(messageId, userId) {
+      const message = await this.getMessageById(messageId);
+      if (!message || message.senderId !== userId) return null;
+
+      await messagesCollection().updateOne(
+        { id: messageId },
+        {
+          $set: {
+            deletedForEveryoneAt: new Date().toISOString(),
+            reactions: [],
+            mediaUrl: null,
+            mediaName: null,
+            mediaMime: null
+          }
+        }
+      );
+      return this.getMessageById(messageId);
+    },
+
     async createGroup(payload) {
       const group = {
         id: payload.id || uuid(),
@@ -359,6 +379,25 @@ export function createMongoRepository() {
         editedAt: payload.editedAt
       };
       await groupMessagesCollection().updateOne({ id: messageId }, { $set: updates });
+      return this.getGroupMessageById(messageId);
+    },
+
+    async deleteGroupMessageForEveryone(messageId, userId) {
+      const message = await this.getGroupMessageById(messageId);
+      if (!message || message.senderId !== userId) return null;
+
+      await groupMessagesCollection().updateOne(
+        { id: messageId },
+        {
+          $set: {
+            deletedForEveryoneAt: new Date().toISOString(),
+            reactions: [],
+            mediaUrl: null,
+            mediaName: null,
+            mediaMime: null
+          }
+        }
+      );
       return this.getGroupMessageById(messageId);
     },
 

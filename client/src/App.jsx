@@ -639,6 +639,15 @@ export function App() {
     });
   }
 
+  function deleteMessageForEveryone(message) {
+    if (!socketRef.current || message.senderId !== user?.id) return;
+    setOpenMessageMenuId("");
+    socketRef.current.emit(isGroupChat ? "group:message:delete:everyone" : "message:delete:everyone", {
+      groupId: isGroupChat ? activeChat.id : undefined,
+      messageId: message.id
+    });
+  }
+
   useEffect(() => {
     if (!user || !activeChat || !socketRef.current) return;
     const unreadReceived = isGroupChat
@@ -1691,7 +1700,8 @@ export function App() {
 
             {visibleMessages.map((message) => {
               const mine = message.senderId === user?.id;
-              const textToShow = messageTextForUser(message);
+              const deletedForEveryone = Boolean(message.deletedForEveryoneAt);
+              const textToShow = deletedForEveryone ? "This message was deleted" : messageTextForUser(message);
               const myReaction = (message.reactions || []).find((reaction) => reaction.userId === user?.id);
               const menuOpen = openMessageMenuId === message.id;
 
@@ -1708,40 +1718,50 @@ export function App() {
                   </button>
                   {menuOpen && (
                     <div className="message-menu">
-                      <button type="button" onClick={() => beginReply(message)}>
-                        <Reply size={15} />
-                        <span>Reply</span>
-                      </button>
-                      {mine && (
-                        <button type="button" onClick={() => beginEdit(message)}>
-                          <Pencil size={15} />
-                          <span>Edit</span>
-                        </button>
-                      )}
-                      <div className="message-reaction-menu" aria-label="Reactions">
-                        {["👍", "❤️", "😂"].map((emoji) => (
-                          <button
-                            className={myReaction?.emoji === emoji ? "selected" : ""}
-                            key={emoji}
-                            type="button"
-                            title={`React ${emoji}`}
-                            onClick={() => reactToMessage(message, emoji)}
-                          >
-                            {emoji}
+                      {!deletedForEveryone && (
+                        <>
+                          <button type="button" onClick={() => beginReply(message)}>
+                            <Reply size={15} />
+                            <span>Reply</span>
                           </button>
-                        ))}
-                      </div>
+                          {mine && (
+                            <>
+                              <button type="button" onClick={() => beginEdit(message)}>
+                                <Pencil size={15} />
+                                <span>Edit</span>
+                              </button>
+                              <button type="button" onClick={() => deleteMessageForEveryone(message)}>
+                                <Trash2 size={15} />
+                                <span>Delete for everyone</span>
+                              </button>
+                            </>
+                          )}
+                          <div className="message-reaction-menu" aria-label="Reactions">
+                            {["👍", "❤️", "😂"].map((emoji) => (
+                              <button
+                                className={myReaction?.emoji === emoji ? "selected" : ""}
+                                key={emoji}
+                                type="button"
+                                title={`React ${emoji}`}
+                                onClick={() => reactToMessage(message, emoji)}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
-                  {message.replyPreviewText && (
+                  {!deletedForEveryone && message.replyPreviewText && (
                     <div className="reply-preview">
                       <Reply size={13} />
                       <span>{message.replyPreviewText}</span>
                     </div>
                   )}
-                  <p className="message-main">{textToShow}</p>
-                  <MessageMedia message={message} />
-                  {message.reactions?.length > 0 && (
+                  <p className={`message-main ${deletedForEveryone ? "deleted-message" : ""}`}>{textToShow}</p>
+                  {!deletedForEveryone && <MessageMedia message={message} />}
+                  {!deletedForEveryone && message.reactions?.length > 0 && (
                     <div className="reaction-strip">
                       {message.reactions.map((reaction) => (
                         <span key={`${reaction.userId}:${reaction.emoji}`}>{reaction.emoji}</span>

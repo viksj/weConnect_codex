@@ -589,6 +589,17 @@ io.on("connection", (socket) => {
     io.to(updatedMessage.receiverId).emit("message:update", updatedMessage);
   });
 
+  socket.on("message:delete:everyone", async ({ messageId }) => {
+    const sender = socket.data.user;
+    if (!sender || !messageId) return;
+
+    const updatedMessage = await database.deleteMessageForEveryone?.(messageId, sender.id);
+    if (!updatedMessage) return;
+
+    io.to(updatedMessage.senderId).emit("message:update", updatedMessage);
+    io.to(updatedMessage.receiverId).emit("message:update", updatedMessage);
+  });
+
   socket.on("group:message:send", async ({
     groupId,
     text,
@@ -676,6 +687,26 @@ io.on("connection", (socket) => {
       editedAt: new Date().toISOString()
     });
     if (!updatedMessage) return;
+
+    const members = await database.getGroupMembers(groupId);
+    await Promise.all(
+      members.map(async (member) => {
+        const translatedMessage = await formatGroupMessageForUser(updatedMessage, member);
+        io.to(member.id).emit("message:update", translatedMessage);
+      })
+    );
+    members.forEach((member) => io.to(member.id).emit("groups:update"));
+  });
+
+  socket.on("group:message:delete:everyone", async ({ groupId, messageId }) => {
+    const sender = socket.data.user;
+    if (!sender || !groupId || !messageId) return;
+
+    const group = await database.getGroupByIdForUser(groupId, sender.id);
+    if (!group) return;
+
+    const updatedMessage = await database.deleteGroupMessageForEveryone?.(messageId, sender.id);
+    if (!updatedMessage || updatedMessage.groupId !== groupId) return;
 
     const members = await database.getGroupMembers(groupId);
     await Promise.all(

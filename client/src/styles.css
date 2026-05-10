@@ -648,6 +648,12 @@ select:focus {
   overflow-wrap: anywhere;
 }
 
+.deleted-message {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 700;
+}
+
 .reply-preview {
   display: flex;
   align-items: center;

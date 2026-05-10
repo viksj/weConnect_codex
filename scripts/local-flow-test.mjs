@@ -154,6 +154,24 @@ function waitForEvent(socket, eventName) {
   });
 }
 
+function waitForNoEvent(socket, eventName, action, timeoutMs = 350) {
+  return new Promise((resolveNoEvent, rejectNoEvent) => {
+    const timeout = setTimeout(() => {
+      socket.off(eventName, handleEvent);
+      resolveNoEvent();
+    }, timeoutMs);
+
+    function handleEvent(payload) {
+      clearTimeout(timeout);
+      socket.off(eventName, handleEvent);
+      rejectNoEvent(new Error(`Unexpected Socket.IO ${eventName}: ${JSON.stringify(payload)}`));
+    }
+
+    socket.on(eventName, handleEvent);
+    action();
+  });
+}
+
 async function sendAndAssertMessage({
   senderSocket,
   receiverSocket,
@@ -217,6 +235,18 @@ async function editAndAssertMessage({ editorSocket, receiverSocket, editor, mess
     `Expected edited translation "${expectedTranslation}", got "${decryptMessage(message.translatedText)}"`
   );
   assert(message.editedAt, "Edited direct message did not include editedAt");
+  return message;
+}
+
+async function deleteAndAssertMessageForEveryone({ deleterSocket, receiverSocket, deleter, messageId }) {
+  const incomingUpdate = waitForEvent(receiverSocket, "message:update");
+  deleterSocket.emit("message:delete:everyone", { messageId });
+
+  const message = await incomingUpdate;
+  assert(message.id === messageId, "Deleted message id did not match");
+  assert(message.senderId === deleter.id, `Deleted message sender is not ${deleter.name}`);
+  assert(message.deletedForEveryoneAt, "Deleted direct message did not include deletedForEveryoneAt");
+  assert((message.reactions || []).length === 0, "Deleted direct message still has reactions");
   return message;
 }
 
@@ -290,6 +320,19 @@ async function editAndAssertGroupMessage({ editorSocket, receiverSocket, editor,
     `Expected edited group translation "${expectedTranslation}", got "${decryptMessage(message.translatedText)}"`
   );
   assert(message.editedAt, "Edited group message did not include editedAt");
+  return message;
+}
+
+async function deleteAndAssertGroupMessageForEveryone({ deleterSocket, receiverSocket, deleter, groupId, messageId }) {
+  const incomingUpdate = waitForEvent(receiverSocket, "message:update");
+  deleterSocket.emit("group:message:delete:everyone", { groupId, messageId });
+
+  const message = await incomingUpdate;
+  assert(message.id === messageId, "Deleted group message id did not match");
+  assert(message.groupId === groupId, "Deleted group message group id did not match");
+  assert(message.senderId === deleter.id, `Deleted group message sender is not ${deleter.name}`);
+  assert(message.deletedForEveryoneAt, "Deleted group message did not include deletedForEveryoneAt");
+  assert((message.reactions || []).length === 0, "Deleted group message still has reactions");
   return message;
 }
 
@@ -414,6 +457,12 @@ async function run() {
       text: "Namaste",
       expectedTranslation: "Hello"
     });
+    await deleteAndAssertMessageForEveryone({
+      deleterSocket: aliceSocket,
+      receiverSocket: bobSocket,
+      deleter: alice,
+      messageId: firstMessage.id
+    });
     const secondMessage = await sendAndAssertMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
@@ -423,6 +472,9 @@ async function run() {
       expectedTranslation: "What are you doing?",
       replyToMessageId: firstMessage.id,
       replyPreviewText: "Namaste"
+    });
+    await waitForNoEvent(aliceSocket, "message:update", () => {
+      bobSocket.emit("message:delete:everyone", { messageId: secondMessage.id });
     });
     const voiceMessage = await sendAndAssertVoiceMessage({
       senderSocket: aliceSocket,
@@ -443,7 +495,8 @@ async function run() {
     assert(storedVoiceMessage, "Stored voice message was not returned");
     assert(decryptMessage(storedFirstMessage.translatedText) === "Hello", "Stored edited translation was not English");
     assert(storedFirstMessage.editedAt, "Stored direct edit timestamp was not returned");
-    assert(storedFirstMessage.reactions.some((reaction) => reaction.userId === bob.id && reaction.emoji === "👍"), "Stored reaction was not returned");
+    assert(storedFirstMessage.deletedForEveryoneAt, "Stored direct delete-for-everyone timestamp was not returned");
+    assert((storedFirstMessage.reactions || []).length === 0, "Stored deleted direct message still has reactions");
     assert(storedSecondMessage.replyToMessageId === firstMessage.id, "Stored reply target was not returned");
     assert(decryptMessage(storedSecondMessage.replyPreviewText) === "Namaste", "Stored reply preview was not returned");
     assert(
@@ -491,6 +544,13 @@ async function run() {
       text: "Namaste",
       expectedTranslation: "Hello"
     });
+    await deleteAndAssertGroupMessageForEveryone({
+      deleterSocket: aliceSocket,
+      receiverSocket: bobSocket,
+      deleter: alice,
+      groupId: group.id,
+      messageId: firstGroupMessage.id
+    });
     const secondGroupMessage = await sendAndAssertGroupMessage({
       senderSocket: aliceSocket,
       receiverSocket: bobSocket,
@@ -502,6 +562,9 @@ async function run() {
       replyPreviewText: "Namaste",
       expectedReplyPreview: "Hello"
     });
+    await waitForNoEvent(aliceSocket, "message:update", () => {
+      bobSocket.emit("group:message:delete:everyone", { groupId: group.id, messageId: secondGroupMessage.id });
+    });
     const { messages: groupMessages } = await get(`/api/users/${bob.id}/groups/${group.id}/messages`, bobToken);
     const storedFirstGroupMessage = groupMessages.find((message) => message.id === firstGroupMessage.id);
     const storedSecondGroupMessage = groupMessages.find((message) => message.id === secondGroupMessage.id);
@@ -512,10 +575,8 @@ async function run() {
       "Stored edited group translation was not English"
     );
     assert(storedFirstGroupMessage.editedAt, "Stored group edit timestamp was not returned");
-    assert(
-      storedFirstGroupMessage.reactions.some((reaction) => reaction.userId === bob.id && reaction.emoji === "❤️"),
-      "Stored group reaction was not returned"
-    );
+    assert(storedFirstGroupMessage.deletedForEveryoneAt, "Stored group delete-for-everyone timestamp was not returned");
+    assert((storedFirstGroupMessage.reactions || []).length === 0, "Stored deleted group message still has reactions");
     assert(storedSecondGroupMessage.replyToMessageId === firstGroupMessage.id, "Stored group reply target was not returned");
     assert(
       decryptMessage(storedSecondGroupMessage.replyPreviewText) === "Hello",

@@ -45,6 +45,8 @@ function mapMessage(row) {
     status: row.status,
     readAt: row.read_at instanceof Date ? row.read_at.toISOString() : row.read_at,
     editedAt: row.edited_at instanceof Date ? row.edited_at.toISOString() : row.edited_at,
+    deletedForEveryoneAt:
+      row.deleted_for_everyone_at instanceof Date ? row.deleted_for_everyone_at.toISOString() : row.deleted_for_everyone_at,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at
   };
 }
@@ -142,6 +144,9 @@ export function createMySqlRepository() {
     await pool.query("ALTER TABLE messages ADD COLUMN edited_at DATETIME(3) NULL").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
+    await pool.query("ALTER TABLE messages ADD COLUMN deleted_for_everyone_at DATETIME(3) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS contacts (
@@ -230,6 +235,9 @@ export function createMySqlRepository() {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
     await pool.query("ALTER TABLE group_messages ADD COLUMN edited_at DATETIME(3) NULL").catch((error) => {
+      if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    });
+    await pool.query("ALTER TABLE group_messages ADD COLUMN deleted_for_everyone_at DATETIME(3) NULL").catch((error) => {
       if (error.code !== "ER_DUP_FIELDNAME") throw error;
     });
   }
@@ -484,6 +492,27 @@ export function createMySqlRepository() {
       return this.getMessageById(messageId);
     },
 
+    async deleteMessageForEveryone(messageId, userId) {
+      const message = await this.getMessageById(messageId);
+      if (!message || message.senderId !== userId) return null;
+
+      await pool.query(
+        `UPDATE messages
+         SET deleted_for_everyone_at = :deletedAt,
+             reactions_json = :reactionsJson,
+             media_url = NULL,
+             media_name = NULL,
+             media_mime = NULL
+         WHERE id = :messageId`,
+        {
+          messageId,
+          deletedAt: formatMySqlDateTime(),
+          reactionsJson: JSON.stringify([])
+        }
+      );
+      return this.getMessageById(messageId);
+    },
+
     async createGroup(payload) {
       const group = {
         id: payload.id || uuid(),
@@ -663,6 +692,27 @@ export function createMySqlRepository() {
           originalText: payload.originalText,
           sourceLanguage: payload.sourceLanguage,
           editedAt: formattedEditedAt
+        }
+      );
+      return this.getGroupMessageById(messageId);
+    },
+
+    async deleteGroupMessageForEveryone(messageId, userId) {
+      const message = await this.getGroupMessageById(messageId);
+      if (!message || message.senderId !== userId) return null;
+
+      await pool.query(
+        `UPDATE group_messages
+         SET deleted_for_everyone_at = :deletedAt,
+             reactions_json = :reactionsJson,
+             media_url = NULL,
+             media_name = NULL,
+             media_mime = NULL
+         WHERE id = :messageId`,
+        {
+          messageId,
+          deletedAt: formatMySqlDateTime(),
+          reactionsJson: JSON.stringify([])
         }
       );
       return this.getGroupMessageById(messageId);

@@ -143,6 +143,18 @@ export function createMemoryRepository() {
       return message;
     },
 
+    async deleteMessageForEveryone(messageId, userId) {
+      const message = messages.find((item) => item.id === messageId);
+      if (!message || message.senderId !== userId) return null;
+
+      message.deletedForEveryoneAt = new Date().toISOString();
+      message.reactions = [];
+      message.mediaUrl = null;
+      message.mediaName = null;
+      message.mediaMime = null;
+      return message;
+    },
+
     async createGroup(payload) {
       const group = {
         id: payload.id || uuid(),
@@ -222,6 +234,18 @@ export function createMemoryRepository() {
         sourceLanguage: payload.sourceLanguage,
         editedAt: payload.editedAt
       });
+      return message;
+    },
+
+    async deleteGroupMessageForEveryone(messageId, userId) {
+      const message = groupMessages.find((item) => item.id === messageId);
+      if (!message || message.senderId !== userId) return null;
+
+      message.deletedForEveryoneAt = new Date().toISOString();
+      message.reactions = [];
+      message.mediaUrl = null;
+      message.mediaName = null;
+      message.mediaMime = null;
       return message;
     },
 
