@@ -318,7 +318,85 @@ async function translateWithOpenAI(text, fromLanguage, toLanguage) {
   return body.output_text?.trim() || null;
 }
 
+function extractGeminiText(body) {
+  return body.candidates
+    ?.flatMap((candidate) => candidate.content?.parts || [])
+    .map((part) => part.text)
+    .filter(Boolean)
+    .join("")
+    .trim() || null;
+}
+
+async function translateWithGemini(text, fromLanguage, toLanguage) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const preferredModel = process.env.GEMINI_TRANSLATION_MODEL || "gemini-2.5-flash";
+  const fallbackModels = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const models = Array.from(new Set([preferredModel, ...fallbackModels]));
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const translatedText = await generateGeminiTranslation(model, apiKey, text, fromLanguage, toLanguage);
+      if (translatedText) return translatedText;
+    } catch (error) {
+      lastError = error;
+      console.error(`Gemini model ${model} failed`, error);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
+async function generateGeminiTranslation(model, apiKey, text, fromLanguage, toLanguage) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey
+      },
+      body: JSON.stringify({
+        generationConfig: {
+          temperature: 0.1,
+          topP: 0.8
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text:
+                  "Translate the message only. Preserve tone, meaning, names, emojis, and formatting. " +
+                  "Return only the translated message, with no explanation, labels, quotes, or markdown.\n\n" +
+                  `Source language: ${fromLanguage}\n` +
+                  `Target language: ${toLanguage}\n` +
+                  `Message: ${text}`
+              }
+            ]
+          }
+        ]
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(`Gemini translation failed with ${response.status}: ${errorBody.slice(0, 240)}`);
+  }
+
+  const body = await response.json();
+  return extractGeminiText(body);
+}
+
 async function translateWithProvider(provider, text, fromLanguage, toLanguage) {
+  if (provider === "gemini") {
+    return translateWithGemini(text, fromLanguage, toLanguage);
+  }
+
   if (provider === "openai") {
     return translateWithOpenAI(text, fromLanguage, toLanguage);
   }
