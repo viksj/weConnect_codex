@@ -49,6 +49,39 @@ const demoUser = {
   emailOrPhone: "+91 90000 00000",
   motherTongue: "hi"
 };
+const webSessionKey = "weconnect:web-session";
+
+function userToForm(user) {
+  return {
+    name: user?.name || demoUser.name,
+    emailOrPhone: user?.emailOrPhone || demoUser.emailOrPhone,
+    motherTongue: user?.motherTongue || demoUser.motherTongue
+  };
+}
+
+function loadStoredSession() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const rawSession = window.localStorage.getItem(webSessionKey);
+    if (!rawSession) return null;
+    const session = JSON.parse(rawSession);
+    if (!session?.authToken || !session?.user?.id) return null;
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredSession(session) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(webSessionKey, JSON.stringify(session));
+}
+
+function clearStoredSession() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(webSessionKey);
+}
 
 function getRtcConfig() {
   try {
@@ -127,14 +160,15 @@ function fileToDataUrl(file) {
 }
 
 export function App() {
-  const [step, setStep] = useState("phone");
-  const [form, setForm] = useState(demoUser);
+  const [storedSession] = useState(() => loadStoredSession());
+  const [step, setStep] = useState(() => (storedSession ? "chat" : "phone"));
+  const [form, setForm] = useState(() => userToForm(storedSession?.user));
   const [otp, setOtp] = useState("");
   const [confirmationResult, setConfirmationResult] = useState(null);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [user, setUser] = useState(null);
-  const [authToken, setAuthToken] = useState("");
+  const [user, setUser] = useState(() => storedSession?.user || null);
+  const [authToken, setAuthToken] = useState(() => storedSession?.authToken || "");
   const [contacts, setContacts] = useState([]);
   const [groups, setGroups] = useState([]);
   const [selectedContact, setSelectedContact] = useState(null);
@@ -143,7 +177,7 @@ export function App() {
   const [contactSearch, setContactSearch] = useState("");
   const [groupName, setGroupName] = useState("");
   const [groupMemberIds, setGroupMemberIds] = useState([]);
-  const [profileForm, setProfileForm] = useState(demoUser);
+  const [profileForm, setProfileForm] = useState(() => userToForm(storedSession?.user));
   const [addContactText, setAddContactText] = useState("");
   const [inviteInfo, setInviteInfo] = useState(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
@@ -657,11 +691,32 @@ export function App() {
       }, authToken);
       setUser(result.user);
       setProfileForm(result.user);
+      saveStoredSession({ authToken, user: result.user });
       setStep("chat");
     } catch (caughtError) {
       console.error("Profile setup failed:", caughtError);
       setError("Profile save nahi ho paaya.");
     }
+  }
+
+  function handleLogout() {
+    clearStoredSession();
+    socketRef.current?.disconnect();
+    stopVoicePlayback();
+    cleanupCall();
+    setUser(null);
+    setAuthToken("");
+    setContacts([]);
+    setGroups([]);
+    setSelectedContact(null);
+    setSelectedGroup(null);
+    setMessages([]);
+    setMessageText("");
+    setOtp("");
+    setConfirmationResult(null);
+    setProfileForm(demoUser);
+    setForm(demoUser);
+    setStep("phone");
   }
 
   function sendMessage(event) {
@@ -791,6 +846,7 @@ export function App() {
         motherTongue: profileForm.motherTongue
       }, authToken);
       setUser(result.user);
+      saveStoredSession({ authToken, user: result.user });
       setError("Profile updated.");
     } catch {
       setError("Profile update nahi ho paaya.");
@@ -1219,6 +1275,7 @@ export function App() {
                 </select>
               </label>
               <button className="secondary-button" type="submit">Save profile</button>
+              <button className="secondary-button ghost-button" type="button" onClick={handleLogout}>Log out</button>
             </form>
           )}
           {user && (
